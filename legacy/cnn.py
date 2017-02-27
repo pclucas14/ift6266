@@ -21,52 +21,12 @@ from keras import backend as K
 from keras.models import model_from_json
 import os
 import matplotlib.pyplot as plt
-from keras.utils.visualize_util import plot
+#from keras.utils.visualize_util import plot
 
 
 # ################## Download and prepare the MNIST dataset ##################
 # This is just some way of getting the MNIST dataset from an online location
 # and loading it into numpy arrays. It doesn't involve Lasagne at all.
-
-def load_dataset(ds_split=(0.8,0.15,0.05), shuffle=False):
-    print("loading dataset...")
-
-    data_path = "C:/Users/pcluc/Desktop/School/UdeM/Deep Learning 5xx/project/data"
-    split="train2014"
-    data_path = os.path.join(data_path, split)
-    imgs = glob.glob(data_path + "/*.jpg")
-
-    # sample a few
-    # imgs = imgs[:1000]
-    X, Y = [], []
-
-    for i, img_path in enumerate(imgs):
-        try : 
-            img = Image.open(img_path)
-            x, y = split_image(img)
-            X.append(x)
-            Y.append(y)
-        except : 
-            pass
-
-    #Image.fromarray(X[-1]).show()
-    #Image.fromarray(Y[-1]).show()
-
-    X = np.array(X)
-    Y = np.array(Y)
-
-    if shuffle : 
-        X = X.reshape((-1, 3, 64, 64))
-        Y = Y.reshape((-1,3,32,32))
-
-
-    amt = X.shape[0]
-    idx1 = int(ds_split[0]*amt)
-    idx2 = int((ds_split[0] + ds_split[1])*amt)
-
-    return X[:idx1], Y[:idx1], X[idx1:idx2], Y[idx1:idx2], X[idx2:], Y[idx2:] 
-
-
 def keras_model(load=False):
     if load : 
         print('loading model')
@@ -124,15 +84,15 @@ def save_model(model):
 # Everything else will be handled in our main program now. We could pull out
 # more functions to better separate the code, but it wouldn't make it any
 # easier to read.
-'''
+
 X_train, y_train, X_valid, Y_valid, X_test, y_test = load_dataset()
 
 model = keras_model(load=False)
-plot(model, show_shapes=True, to_file='3dcnn.png')
+#plot(model, show_shapes=True, to_file='3dcnn.png')
 
 import pdb; #pdb.set_trace()
 for i in range(3): # restart at 6
-    model.fit(X_train, y_train, batch_size=128, nb_epoch=5,
+    model.fit(X_train, y_train, batch_size=128, nb_epoch=1,
           verbose=1)
 
     pred = model.predict(X_valid)
@@ -145,5 +105,5 @@ for i in range(3): # restart at 6
 
 save_model(model)
 pdb.set_trace()
-'''
+
 

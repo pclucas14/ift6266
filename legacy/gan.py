@@ -24,12 +24,16 @@ import matplotlib
 import matplotlib.pyplot as plt
 import pdb
 matplotlib.use('Agg')
+
 #s.environ["THEANO_FLAGS"] = "exception_verbosity=high"
 #theano.config.compute_test_value = 'warn'
 
 use_mnist = True
-threshold_update = 0.01
-save_model = False
+threshold_update = 0.03
+save_model = True
+load_weights = False
+verbose = True
+coffee_break = 10
 
 ################################################################################
 #######################          MODEL CREATION          #######################
@@ -65,10 +69,14 @@ def generator_model(input_noise, load_weights=False):
     generator = Model(input_noise,model)
     generator.compile(loss='binary_crossentropy', optimizer=Adam(lr=1e-4))
     #generator.summary()
+    if load_weights:
+        path = 'models/generator_2.h5'
+        generator.load_weights(path)
+        print('loaded generator weights from cache.')
     return generator
 
 
-def discriminator_model(generated_image):
+def discriminator_model(generated_image,load_weights=False):
     H = Convolution2D(256, 5, 5, subsample=(2, 2), border_mode = 'same', activation='relu')(generated_image)
     H = LeakyReLU(0.2)(H)
     H = Dropout(0.25)(H)
@@ -83,6 +91,10 @@ def discriminator_model(generated_image):
     discriminator = Model(generated_image,d_V)
     discriminator.compile(loss='binary_crossentropy', optimizer=Adam(lr=1e-5))
     # discriminator.summary()
+    if load_weights:
+        path = 'models/discriminator_?.h5'
+        generator.load_weights(path)
+        print('loaded discriminator weights from cache.')
     return discriminator
 
 
@@ -121,7 +133,7 @@ def saveImage(imageData, imageName, epoch):
 	for i in range(16):
 		for j in range(8):
 			pltImage = imageData[k][0]
-			ax[i,j].imshow(pltImage, interpolation='nearest')#,cmap='gray_r')
+			ax[i,j].imshow(pltImage, interpolation='nearest',cmap='gray_r')
 			ax[i,j].axis('off')
 			k = k+1
 	f.set_size_inches(18.5, 10.5)
@@ -140,7 +152,7 @@ else:
 gan_input = Input(shape=[100])
 
 # creating generator
-generator = generator_model(gen_input)
+generator = generator_model(gen_input,load_weights=load_weights)
 
 # creating discriminator
 discriminator = discriminator_model(disc_input)
@@ -168,14 +180,18 @@ if not os.path.exists('metrics'):
 
 dLoss = []
 gLoss = []
-batchSize = 256
+batchSize = 128
 nbEpoch = 200
 decayIter = 100
 
 if use_mnist : 
-    (X_train, y_train), (X_test, y_test) = mnist.load_data()
+    (X_train, y_train), _ = mnist.load_data()
     X_train = X_train.reshape((-1,1,28,28))
-    pre_train_discriminator(discriminator, generator, X_train.shape[0], X_train)
+    X_train = X_train.astype('float32')
+    X_train -= - 127.5
+    X_train /= 127.5
+    print(str(X_train.shape[0]) + ' MNIST images in training data set.')
+    pre_train_discriminator(discriminator, generator, int(X_train.shape[0] / 10), X_train)
 
 else : 
     Y_train, X_train, Y_test, X_test, _, _ = load_dataset(ds_split=(0.8,0.2,0.), shuffle=True)
@@ -199,7 +215,8 @@ for epoch in range(1, nbEpoch + 1):
 
         noisePredictBatch = X_noise[np.random.randint(numExamples, size = batchSize)]
         noiseDataBatch = generator.predict(noisePredictBatch)
-        origDataBatch = X_train[np.random.randint(numExamples, size = batchSize)]
+        origDataBatch = X_train[batchSize*i:batchSize*(i+1)]
+        #[np.random.randint(numExamples, size = batchSize)]
         noiseLabelsBatch, origLabelsBatch = np.zeros(batchSize).astype(int), np.ones(batchSize).astype(int)
 
         trainBatch = np.concatenate((noiseDataBatch, origDataBatch), axis = 0)
@@ -209,24 +226,26 @@ for epoch in range(1, nbEpoch + 1):
         # to make sure the discriminator does not become too powerful, only perform update when disc loss if big enough
         # note that the discriminator has already been pre trained to have a general idea 
 
-        if len(dLoss) > 0 and dLoss[-1] > threshold_update : 
+        if len(dLoss) == 0 or ((len(dLoss) > 0 and dLoss[-1] > threshold_update)) or np.random.rand() < 0.1 : 
             discriminatorLoss = discriminator.train_on_batch(trainBatch, trainLabels)
+            dLoss.append(discriminatorLoss)
+            if verbose : print('discriminator loss : ' + str(discriminatorLoss))
+
         dcganLabels = np.ones(batchSize).astype(int)
 
         make_trainable(discriminator, False)
         dcganLoss = GAN.train_on_batch(noisePredictBatch, dcganLabels)
+        if verbose : print ('dcgan Loss: ', dcganLoss)
         make_trainable(discriminator, True)
 
-    dLoss.append(discriminatorLoss)
-    gLoss.append(dcganLoss)
+        gLoss.append(dcganLoss)
 
     print('after epoch: ', epoch)
-    print ('dcgan Loss: ', dcganLoss, '\t discriminator loss', discriminatorLoss)
     saveImage(noiseDataBatch, 'generated', epoch)
 
     
-    if (epoch % 5 == 0) or (epoch == 1) and save_model:  
-        pdb.set_trace()   
+    if (epoch % coffee_break == 1):  
+        #pdb.set_trace()   
         generator.save('models/generator_'+str(epoch)+'.h5')
         discriminator.save('models/discriminator_'+str(epoch)+'.h5')
     '''
