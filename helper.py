@@ -122,14 +122,14 @@ def create_tensor_masks(batch_size):
     center = (32,32)
     # note : the maskes must be built in the dimensions in which the image is
     # displayed. if not transpose operation fucks them up.
-    expected_shape= (batch_size,64,64,3)
+    expected_shape= (batch_size,3,64,64)
     mask = np.ones(expected_shape)
     mask_rev = np.zeros(expected_shape)
-    mask[:,center[0]-16:center[0]+16, center[1]-16:center[1]+16,:] = 0
-    mask_rev[:,center[0]-16:center[0]+16, center[1]-16:center[1]+16,:] = 1
+    mask[:,:,center[0]-16:center[0]+16, center[1]-16:center[1]+16] = 0
+    mask_rev[:,:,center[0]-16:center[0]+16, center[1]-16:center[1]+16] = 1
     # now, reshape the masks in the proper dimensions 
-    mask = mask.reshape((-1, 3, 64, 64))
-    mask_rev = mask_rev.reshape((-1, 3, 64, 64))
+    # mask = mask.reshape((-1, 3, 64, 64))
+    # mask_rev = mask_rev.reshape((-1, 3, 64, 64))
     
     
     return theano.shared(mask), theano.shared(mask_rev)
