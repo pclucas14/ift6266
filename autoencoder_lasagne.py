@@ -27,6 +27,7 @@ from model import *
 # Hyperparameters :   
 batch_size = 256
 num_epochs = 50
+n_critic = 5
 
 input_ = T.tensor4()
 output_ = T.tensor4()
@@ -47,8 +48,11 @@ critic_output = lasagne.layers.get_output(critic)
 real_out = lasagne.layers.get_output(critic)
 
 # Create expression for passing fake data through the critic
-# TODO : modify this to only pass in the modified version
-#critic_input = 
+# critic input should take the real contour from the same tensor as given to 
+# the autoencoder. 
+masks = create_tensor_masks(batch_size)
+critic_input =  combine_tensor_images(model.output_, ae_output, batch_size, masks=masks)
+
 fake_out = lasagne.layers.get_output(critic,
                             inputs=ae_output)
 '''
@@ -71,23 +75,27 @@ ae_sqr_loss = lasagne.objectives.squared_error(ae_output,
                                            model.output_)
 ae_cr_loss = -ae_score
 
-ae_loss =  lambda_sqr * T.mean(ae_sqr_loss) + lambda_cr * ae_cr_loss
+ae_loss = ae_cr_loss #  lambda_sqr * T.mean(ae_sqr_loss) + lambda_cr * ae_cr_loss
 #%%
 
 ae_updates = lasagne.updates.adam(ae_loss, ae_params)
 critic_updates = lasagne.updates.adam(critic_loss, critic_params)
 
 # Clip critic parameters in a limited range around zero (except biases)
+critic_clip_updates=[]
 for param in lasagne.layers.get_all_params(critic, trainable=True,
-                                           regularizable=True):
-        critic_updates[param] = T.clip(critic_updates[param], -clip, clip)
-
+                                           regularizable=True):                                           
+    critic_clip_updates.append([param, T.clip(param, -clip, clip)])
 
 
 train_critic = theano.function(inputs=[model.input_, model.input_c], 
                                outputs=[critic_loss], 
                                updates=critic_updates,
                                name='train_critic')
+
+clip_critic = theano.function(inputs=[], updates=critic_clip_updates,
+                              name='clip_critic')
+
 
 train_ae = theano.function(inputs=[model.input_, model.output_], 
                            outputs=[ae_loss, ae_output], 
@@ -101,16 +109,12 @@ test_ae = theano.function(inputs=[model.input_, model.output_],
 #%%
 
 trainx, trainy, testx, testy, _, _ = load_dataset(sample=False)
-'''
-trainx = trainx.reshape((-1, 3, 64, 64)).astype('float32')
-trainy = trainy.reshape((-1,3,64, 64)).astype('float32')
-testx = trainx.reshape((-1, 3, 64, 64)).astype('float32')
-testy = trainy.reshape((-1,3,64, 64)).astype('float32')
-'''
+
 trainx = np.transpose(trainx, axes=[0,3,1,2]).astype('float32')
 trainy = np.transpose(trainy, axes=[0,3,1,2]).astype('float32')
 testx = np.transpose(testx, axes=[0,3,1,2]).astype('float32')
 testy = np.transpose(testy, axes=[0,3,1,2]).astype('float32')
+
 #%%
 num_batches = trainx.shape[0] / batch_size
 
@@ -127,9 +131,12 @@ for epoch in range(0,60) :
             out_img = np.transpose(out_img, axes=[0,2,3,1])
             saveImage(out_img.astype('uint8'), 'test', epoch) 
             
-        else :     
+        else :  
             loss_ae, pred_ae = train_ae(batch_x, batch_y)
-            loss_cr = train_critic(batch_y, pred_ae)
+            for _ in range(n_critic):
+                loss_cr = train_critic(batch_y, pred_ae)
+                clip_critic()
+
             
             if i == num_batches-3 :
                 out_img = combine_tensors(batch_y, pred_ae)
@@ -140,9 +147,9 @@ for epoch in range(0,60) :
             
     print loss_ae
 #%%
+'''
 z = combine_tensors(trainy[0:batch_size], trainy[2*batch_size: 3*batch_size])
 z = np.transpose(z, axes=[0,2,3,1])
 x = Image.fromarray(z[10].astype('uint8')).show()
-            #img.show()   
-
+'''
 
