@@ -150,7 +150,7 @@ for epoch in range(0, 3000) :
     gen_iter = 3
     critic_iter = 1
     
-    for _ in range(10):
+    for _ in range(100):
         # train autoencoder
         for _ in range(gen_iter):
             input, target = next(batches)

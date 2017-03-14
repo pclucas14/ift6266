@@ -69,7 +69,7 @@ def load_dataset(ds_split=(0.95,0.05,0.), shuffle=False, sample=False, resize=Fa
         print('found cached version')
         return trainx, trainy, trainz, testx, testy, testz
     except : 
-        data_path = "C:/Users/pcluc/Desktop/School/UdeM/Deep Learning 5xx/project/data"
+        data_path = "/home2/ift6ed47/ift6266/inpainting"#"C:/Users/pcluc/Desktop/School/UdeM/Deep Learning 5xx/project/data"
         split="train2014"
         data_path = os.path.join(data_path, split)
         imgs = glob.glob(data_path + "/*.jpg")
