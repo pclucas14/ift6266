@@ -6,7 +6,6 @@ import numpy as np
 import theano as th
 import theano.tensor as T
 import lasagne
-from lasagne.layers import dnn
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 # T.nnet.relu has some stability issues, this is better
@@ -105,8 +104,8 @@ class Deconv2DLayer(lasagne.layers.Layer):
         super(Deconv2DLayer, self).__init__(incoming, **kwargs)
         self.target_shape = target_shape
         self.nonlinearity = (lasagne.nonlinearities.identity if nonlinearity is None else nonlinearity)
-        self.filter_size = lasagne.layers.dnn.as_tuple(filter_size, 2)
-        self.stride = lasagne.layers.dnn.as_tuple(stride, 2)
+        self.filter_size = lasagne.utils.as_tuple(filter_size, 2, int)
+        self.stride = lasagne.utils.as_tuple(stride, 2, int)
         self.target_shape = target_shape
 
         self.W_shape = (incoming.output_shape[1], target_shape[1], filter_size[0], filter_size[1])
