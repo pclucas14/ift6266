@@ -197,9 +197,9 @@ for epoch in range(0, 50) :
     #    lambda_sqr.set_value(lasagne.utils.floatX(max(0.1, lambda_sqr.get_value() - 0.001)))
     #    lambda_cr.set_value(lasagne.utils.floatX(min(1, lambda_cr.get_value() + 0.001)))
         
-    if epoch % 10 == 0 : 
-        np.savez('disc_params_5.npz', *[p.get_value() for p in critic_params])
-        np.savez('gen_params_5.npz', *[p.get_value() for p in ae_params])
+    if epoch % 15 == 0 :
+        np.savez('disc_params_' + str(epoch) + '.npz', *[p.get_value() for p in critic_params])
+        np.savez('gen_params_5.npz' + str(epoch) + '.npz', *[p.get_value() for p in ae_params])
     
     # Then we print the results for this epoch:
     print("  discriminator loss:\t\t{}".format(disc_err / updates_critic))
