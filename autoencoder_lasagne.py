@@ -9,6 +9,7 @@ import numpy as np
 import numpy.random as rng
 from PIL import Image
 import os
+import logging
 #os.environ[ 'CUDA_LAUNCH_BLOCKING' ] = '1'
 #os.environ[ 'THEANO_FLAGS' ] = 'mode=DebugMode'
 
@@ -31,7 +32,7 @@ n_critic = 5
 initial_lambda_sqr = 0.
 initial_eta = 2e-3
 full_img = False
-
+logging.info('Logging start')
 
 
 model = Model(version=2, batch_size=batch_size, full_img=full_img)
@@ -46,7 +47,7 @@ srng = RandomStreams(seed=np.random.randint(2147462579, size=6))
 noise = srng.normal((batch_size, 3, 64, 64), avg=0, std=1)
 '''
 #%%
-print 'param setup'
+logging.info('param setup')
 ae_output = lasagne.layers.get_output(auto_encoder)
 ae_params = lasagne.layers.get_all_params(auto_encoder, trainable=True)
 
@@ -92,6 +93,7 @@ here we calculate the gradient wrt to both adversarial and MSE loss for the
 autoencoder. This allows us to compare which loss is "pulling" the hardest
 '''
 print 'loss and function setup'
+logging.info('loss and function setup')
 
 #ae_mse_grad = theano.grad(ae_sqr_loss, wrt=ae_params)
 #ae_mse_grad_norm = sum(T.sum(T.square(grad)) for grad in ae_mse_grad) / len(ae_mse_grad)
@@ -145,9 +147,9 @@ test_ae = theano.function(inputs=[],#model.input_],
                            name='test_ae')
 
 #%%
-
+logging.info('loading data')
 trainx, trainy, _, testx, testy, _ = load_dataset(sample=False, extra=4, normalize=True)
-
+logging.info('data loaded')
 
 batches = iterate_minibatches(trainx, trainy, batch_size, shuffle=True,
                               forever=True)
@@ -204,6 +206,8 @@ for epoch in range(0, 50) :
     # Then we print the results for this epoch:
     print("  discriminator loss:\t\t{}".format(disc_err / updates_critic))
     print("  generator loss:\t\t{}".format(ae_err / updates_gen))
+    logging.info("  discriminator loss:\t\t{}".format(disc_err / updates_critic))
+    logging.info("  generator loss:\t\t{}".format(ae_err / updates_gen))
           
 #%%
 # model.save()
