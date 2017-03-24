@@ -25,14 +25,16 @@ from model import *
 # theano.config.openmp = True
 
 # Hyperparameters :   
-batch_size = 64
+batch_size = 128
 num_epochs = 50
 n_critic = 5
 
 initial_lambda_sqr = 0.
-initial_eta = 2e-3
+initial_eta = 5e-5
 full_img = False
+logging.basicConfig(filename="runtime7.log", level=logging.INFO)
 logging.info('Logging start')
+
 
 
 model = Model(version=2, batch_size=batch_size, full_img=full_img)
@@ -73,14 +75,19 @@ m1 = T.mean(hid_real,axis=0)
 m2 = T.mean(hid_fake,axis=0)
 loss_gen_fm = T.mean(abs(m1-m2)) # feature matching loss
 '''
+a, b, c = 0, 1, 1  # Equation (9) in the paper
+
 # Create update expressions for training
 critic_params = lasagne.layers.get_all_params(critic, trainable=True)
 #critic_loss = (lasagne.objectives.binary_crossentropy(real_out, 1)
 #        + lasagne.objectives.binary_crossentropy(fake_out, 0)).mean()
-critic_loss = 0.5 * T.mean( (real_out - 1) ** 2) + 0.5 * T.mean((fake_out) ** 2)
+critic_loss = (lasagne.objectives.squared_error(real_out, b).mean() +
+                   lasagne.objectives.squared_error(fake_out, a).mean())
+#critic_loss = real_out.mean() - fake_out.mean()
 
-ae_cr_loss = lambda_cr * (T.mean( (fake_out -1) ** 2)) #(lasagne.objectives.binary_crossentropy(fake_out, 0.95).mean())
+ae_cr_loss = lasagne.objectives.squared_error(fake_out, c).mean() #(lasagne.objectives.binary_crossentropy(fake_out, 0.95).mean())
 #                             loss_gen_fm )
+#ae_cr_loss = fake_out.mean()	
 
 #ae_cr_loss = lambda_cr * ((lasagne.objectives.binary_crossentropy(fake_out, 0.95).mean()))# + loss_gen_fm))
 
@@ -97,7 +104,7 @@ logging.info('loss and function setup')
 
 #ae_mse_grad = theano.grad(ae_sqr_loss, wrt=ae_params)
 #ae_mse_grad_norm = sum(T.sum(T.square(grad)) for grad in ae_mse_grad) / len(ae_mse_grad)
-ae_cr_grad = theano.grad(ae_cr_loss, wrt=ae_params)
+ae_cr_grad = theano.grad(ae_loss, wrt=ae_params)
 
 
 ae_grads = ae_cr_grad#[ x + y for (x,y) in zip(ae_mse_grad, ae_cr_grad)]
@@ -110,7 +117,7 @@ ae_updates= lasagne.updates.adam(
     ae_grads, ae_params, learning_rate=eta, beta1=0.5)
 
 critic_updates = lasagne.updates.adam(
-    critic_grads, critic_params, learning_rate=0.08*eta, beta1=0.5)
+    critic_grads, critic_params, learning_rate=eta, beta1=0.5)
 
 train_critic = theano.function(inputs=[model.input_c], #inputs=[model.input_, model.input_c],
                                outputs=[#real_out,
@@ -159,13 +166,13 @@ input_test, target_test = testx[:batch_size], testy[:batch_size]
 
 num_batches = trainx.shape[0] / batch_size
 
-for epoch in range(0, 50) :
+for epoch in range(0, 3000) :
     print epoch
     updates_gen = 0
     updates_critic = 0
     disc_err = 0
     ae_err = 0
-    gen_iter = 3
+    gen_iter = 5
     critic_iter = 1
     
     for _ in range(100):
@@ -199,13 +206,14 @@ for epoch in range(0, 50) :
     #    lambda_sqr.set_value(lasagne.utils.floatX(max(0.1, lambda_sqr.get_value() - 0.001)))
     #    lambda_cr.set_value(lasagne.utils.floatX(min(1, lambda_cr.get_value() + 0.001)))
         
-    if epoch % 15 == 0 :
-        np.savez('disc_params_' + str(epoch) + '.npz', *[p.get_value() for p in critic_params])
-        np.savez('gen_params_5.npz' + str(epoch) + '.npz', *[p.get_value() for p in ae_params])
+    if epoch % 5 == 0 :
+        np.savez('models/disc_params_' + str(epoch) + '.npz', *[p.get_value() for p in critic_params])
+        np.savez('models/gen_params_5.npz' + str(epoch) + '.npz', *[p.get_value() for p in ae_params])
     
     # Then we print the results for this epoch:
     print("  discriminator loss:\t\t{}".format(disc_err / updates_critic))
     print("  generator loss:\t\t{}".format(ae_err / updates_gen))
+    logging.info("epoch : " + str(epoch))
     logging.info("  discriminator loss:\t\t{}".format(disc_err / updates_critic))
     logging.info("  generator loss:\t\t{}".format(ae_err / updates_gen))
           

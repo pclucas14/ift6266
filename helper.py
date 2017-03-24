@@ -7,10 +7,11 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import theano.tensor as T
 import theano
-
+import lasagne
 
 # taken from lasagne gitbub
 
+home = '/home2/ift6ed47/'
 # ############################# Batch iterator ###############################
 # This is just a simple helper function iterating over training data in
 # mini-batches of a particular size, optionally in random order. It assumes
@@ -57,8 +58,8 @@ def split_image(image,extra=0):
 
 def load_dataset(ds_split=(0.95,0.05,0.), shuffle=False, sample=False, resize=False, normalize=False, extra=False):
     print("Loading dataset")
-    try : 
-        f = file("data_extra.bin","rb")
+    try :
+        f = file(home + "data.bin","rb")
         trainx = np.load(f)
         trainy = np.load(f)
         trainz = np.load(f)
@@ -69,7 +70,7 @@ def load_dataset(ds_split=(0.95,0.05,0.), shuffle=False, sample=False, resize=Fa
         print('found cached version')
         return trainx, trainy, trainz, testx, testy, testz
     except : 
-        data_path = "/home2/ift6ed47/ift6266/inpainting"#"C:/Users/pcluc/Desktop/School/UdeM/Deep Learning 5xx/project/data"
+        data_path = home + "ift6266/inpainting"#"C:/Users/pcluc/Desktop/School/UdeM/Deep Learning 5xx/project/data"
         split="train2014"
         data_path = os.path.join(data_path, split)
         imgs = glob.glob(data_path + "/*.jpg")
@@ -113,7 +114,7 @@ def load_dataset(ds_split=(0.95,0.05,0.), shuffle=False, sample=False, resize=Fa
         idx1 = int(ds_split[0]*amt)
         idx2 = int((ds_split[0] + ds_split[1])*amt)
         
-        f = file("data.bin","wb")
+        f = file(home + "data.bin","wb")
         np.save(f,X[:idx1])
         np.save(f,Y[:idx1])
         np.save(f,Z[:idx1])
@@ -253,7 +254,7 @@ def saveImage(imageData, imageName, epoch):
             new_im.paste(img, (i,j))
             index += 1
 
-    new_im.save('images/' + imageName+ '_epoch' + str(epoch) + '.png')
+    new_im.save(home + 'images/' + imageName+ '_epoch' + str(epoch) + '.png')
     
 def normalize(array):
     return (array - np.mean(array)) / np.std(array)
@@ -310,6 +311,10 @@ def adjust_hyperp(eta, epoch, num_epochs=100):
         progress = float(epoch) / num_epochs
         eta.set_value(lasagne.utils.floatX(initial_eta*2*(1 - progress)))
 
+def update_model_params(model, param_path):
+    with np.load(param_path) as f:
+        param_values = [f['arr_%d' % i] for i in range(len(f.files))]
+        lasagne.layers.set_all_param_values(model, param_values)  
 #%%
 # method to combine predictions 
 x = T.tensor4()
