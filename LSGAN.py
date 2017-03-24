@@ -27,11 +27,14 @@ from model import *
 # Hyperparameters :   
 batch_size = 64
 num_epochs = 50
+version = 3
+name = 'lsgan' + str(version)
+
 
 initial_lambda_sqr = 0.
 initial_eta = 1e-4
 full_img = False
-logging.basicConfig(filename="lsgan.log", level=logging.INFO)
+logging.basicConfig(filename=(name + ".log"), level=logging.INFO)
 logging.info('Logging start')
 clip=0.1
 
@@ -63,14 +66,14 @@ critic_output = lasagne.layers.get_output(critic)
 real_out = lasagne.layers.get_output(critic, inputs=model.input_c)
 fake_out = lasagne.layers.get_output(critic,
                             inputs=ae_output)
-
+'''
 # hidden layers for feature matching
 hid_real = ll.get_output(model.critic[-3], inputs=model.input_c, deterministic=False)
 hid_fake = ll.get_output(model.critic[-3], inputs=ae_output, deterministic=False)
 m1 = T.mean(hid_real,axis=0)
 m2 = T.mean(hid_fake,axis=0)
 loss_gen_fm = T.mean(abs(m1-m2)) # feature matching loss
-
+'''
 
 a, b, c = 0, 1, 1
 
@@ -80,7 +83,7 @@ critic_loss = (lasagne.objectives.squared_error(real_out, b).mean() +
 		 lasagne.objectives.squared_error(fake_out, a).mean()) 
 
 
-ae_cr_loss = lasagne.objectives.squared_error(fake_out, c).mean() + loss_gen_fm
+ae_cr_loss = lasagne.objectives.squared_error(fake_out, c).mean()# + loss_gen_fm
 
 ae_loss = ae_cr_loss 
 
@@ -116,7 +119,7 @@ train_critic = theano.function(inputs=[model.input_c], #inputs=[model.input_, mo
                                #givens={model.noise_var: noise},
                                name='train_critic')
 
-train_ae = theano.function(inputs=[model.input_c],#model.input_, model.output_],#, model.input_c],
+train_ae = theano.function(inputs=[],#,model.input_, model.output_],#, model.input_c],
                            outputs=[(fake_out > .5).mean(), 
                                     #ae_mse_grad_norm,
                                     ae_cr_grad_norm,
@@ -156,8 +159,8 @@ for epoch in range(0, 3000) :
     for _ in range(50):
         # train autoencoder
         for _ in range(gen_iter):
-            input, target = next(batches)
-            acc_ae, ae_cr_grad_norm, loss_ae, pred = train_ae(target)#(input, target)#, target)
+            #input, target = next(batches)
+            acc_ae, ae_cr_grad_norm, loss_ae, pred = train_ae()#(input, target)#, target)
             ae_err += np.array([acc_ae, ae_cr_grad_norm, loss_ae])
             #ae_mse_grad_norm,  loss_ae, pred = train_ae(input, target)#, target)
             #ae_err += np.array(train_ae())
@@ -178,11 +181,11 @@ for epoch in range(0, 3000) :
     result = samples*77.3 + 86.3#fill_middle_extra(input_test, samples)* 77.3 + 86.3
     result = result.transpose(0,2,3,1).astype('uint8')
     
-    saveImage(result, 'samples_', epoch)
+    saveImage(result, 'samples_lsgan_', epoch)
     
     if epoch % 5 == 0 :
-        np.savez('models/wgan_disc_' + str(epoch) + '.npz', *[p.get_value() for p in critic_params])
-        np.savez('models/wgan_gen_' + str(epoch) + '.npz', *[p.get_value() for p in ae_params])
+        np.savez('models/' + str(name) + '_disc_' + str(epoch) + '.npz', *[p.get_value() for p in critic_params])
+        np.savez('models/' + str(name) + '_gen_' + str(epoch) + '.npz', *[p.get_value() for p in ae_params])
     
     # Then we print the results for this epoch:
     print("  discriminator loss:\t\t{}".format(disc_err / updates_critic))

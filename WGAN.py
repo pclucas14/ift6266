@@ -30,8 +30,10 @@ num_epochs = 50
 
 initial_lambda_sqr = 0.
 initial_eta = 5e-5
-full_img = False
-logging.basicConfig(filename="wgan3.log", level=logging.INFO)
+version = 4
+name = 'wgan' + str(version)
+
+logging.basicConfig(filename=(name+".log"), level=logging.INFO)
 logging.info('Logging start')
 clip=0.1
 
@@ -177,8 +179,8 @@ for epoch in range(0, 3000) :
     saveImage(result, 'samples_', epoch)
     
     if epoch % 5 == 0 :
-        np.savez('models/wgan_disc_' + str(epoch) + '.npz', *[p.get_value() for p in critic_params])
-        np.savez('models/wgan_gen_' + str(epoch) + '.npz', *[p.get_value() for p in ae_params])
+        np.savez('models/' + name + '_disc_' + str(epoch) + '.npz', *[p.get_value() for p in critic_params])
+        np.savez('models/' + name+ 'gen_' + str(epoch) + '.npz', *[p.get_value() for p in ae_params])
     
     # Then we print the results for this epoch:
     print("  discriminator loss:\t\t{}".format(disc_err / updates_critic))
