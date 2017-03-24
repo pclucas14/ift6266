@@ -31,7 +31,6 @@ version = 99
 name = 'lsgan' + str(version)
 load_params = False 
 
-initial_lambda_sqr = 0.
 initial_eta = 1e-4
 full_img = False
 logging.basicConfig(filename=(name + ".log"), level=logging.INFO)
@@ -58,9 +57,6 @@ gen_output = lasagne.layers.get_output(generator)
 gen_params = lasagne.layers.get_all_params(generator, trainable=True)
 
 eta = theano.shared(lasagne.utils.floatX(initial_eta))
-lambda_sqr = theano.shared(lasagne.utils.floatX(initial_lambda_sqr))
-lambda_cr = theano.shared(lasagne.utils.floatX(1 - initial_lambda_sqr))
-
 
 critic_output = lasagne.layers.get_output(critic)
 
@@ -68,6 +64,7 @@ critic_output = lasagne.layers.get_output(critic)
 real_out = lasagne.layers.get_output(critic, inputs=GAN.input_c)
 fake_out = lasagne.layers.get_output(critic,
                             inputs=gen_output)
+
 '''
 # hidden layers for feature matching
 hid_real = ll.get_output(model.critic[-3], inputs=model.input_c, deterministic=False)
@@ -103,6 +100,7 @@ critic_updates = lasagne.updates.adam(
     critic_grads, critic_params, learning_rate=eta)
 
 '''
+# leftover from WGAN
 # Clip critic parameters in a limited range around zero (except biases)
 critic_clip_updates=[]
 for param in lasagne.layers.get_all_params(critic, trainable=True,regularizable=True):
