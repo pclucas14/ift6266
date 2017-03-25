@@ -66,40 +66,53 @@ class GAN :
     '''
     contruct generator. Architeture based on DCGAN (if you neglect the encoder part). 
     '''
-    def build_generator(self, version=1):
+    def build_generator(self, version=1, encoder=True):
     
         from lasagne.layers import TransposedConv2DLayer as Deconv2DLayer
         
-        if version == 1: 
-            # encoder
-            '''
-            gen_layers = [ll.InputLayer(shape=data_size, input_var=self.model_input)]
-            # b_s x 3 x 64 x 64 --> b_s x 64 x 32 x 32
-            gen_layers.append(nn.batch_norm(ll.Conv2DLayer(gen_layers[-1], 64, 4, 2, pad=1, nonlinearity=nn.lrelu)))
-            # b_s x 64 x 32 x 32 --> b_s x 64 x 16 x 16
-            gen_layers.append(nn.batch_norm(ll.Conv2DLayer(gen_layers[-1], 64, 4, 2, pad=1, nonlinearity=nn.lrelu)))
-            # b_s x 64 x 16 x 16 --> b_s x 128 x 8 x 8
-            gen_layers.append(nn.batch_norm(ll.Conv2DLayer(gen_layers[-1], 128, 4, 2, pad=1, nonlinearity=nn.lrelu)))
-            # b_s x 128 x 8 x 8 --> b_s x 256 x 4 x 4 
-            gen_layers.append(nn.batch_norm(ll.Conv2DLayer(gen_layers[-1], 256, 4, 2, pad=1, nonlinearity=nn.lrelu)))
-            # b_s x 128 x 8 x 8 --> b_s x 512 x 2 x 2 
-            #gen_layers.append(nn.batch_norm(ll.Conv2DLayer(gen_layers[-1], 2048, 4, 2, pad='same', nonlinearity=nn.lrelu)))
-            # b_s x 256 x 4 x 4 --> b_s x 2048 x 1 x 1
-            
-            gen_layers.append(nn.batch_norm(ll.Conv2DLayer(gen_layers[-1], 2048, 4, 4, pad=1, nonlinearity=nn.lrelu)))          
-            '''
-            noise_dim = (self.batch_size, 100)
-            theano_rng = MRG_RandomStreams(rng.randint(2 ** 15))
-            noise = theano_rng.uniform(size=noise_dim)
-            gen_layers = [ll.InputLayer(shape=noise_dim, input_var=noise)]
+	noise_dim = (self.batch_size, 100)
+        theano_rng = MRG_RandomStreams(rng.randint(2 ** 15))
+        noise = theano_rng.uniform(size=noise_dim)        
+        input = ll.InputLayer(shape=noise_dim, input_var=noise)
+
+	if version == 1:  
+	    if encoder : 
+                gen_layers = [ll.InputLayer(shape=(self.batch_size, 3, 64, 64), input_var=self.input_)]
+                # b_s x 3 x 64 x 64 --> b_s x 64 x 32 x 32
+                gen_layers.append(nn.batch_norm(ll.Conv2DLayer(gen_layers[-1], 64, 4, 2, pad=1, nonlinearity=nn.lrelu)))
+                # b_s x 64 x 32 x 32 --> b_s x 128 x 16 x 16
+                gen_layers.append(nn.batch_norm(ll.Conv2DLayer(gen_layers[-1], 128, 4, 2, pad=1, nonlinearity=nn.lrelu)))
+                # b_s x 128 x 16 x 16 -->  b_s x 256 x 8 x 8 
+                gen_layers.append(nn.batch_norm(ll.Conv2DLayer(gen_layers[-1], 256, 4, 2, pad=1, nonlinearity=nn.lrelu)))
+                # b_s x 256 x 8 x 8 --> b_s x 512 x 4 x 4 
+                gen_layers.append(nn.batch_norm(ll.Conv2DLayer(gen_layers[-1], 512, 4, 2, pad=1, nonlinearity=nn.lrelu)))
+                # b_s x 512 x 4 x 4 --> b_s x 1024 x 2 x 2
+                gen_layers.append(nn.batch_norm(ll.Conv2DLayer(gen_layers[-1], 1024, 4, 2, pad=1, nonlinearity=nn.lrelu)))          
+		# b_s x 1024 x 2 x 2 --> b_s x 2048 x 1 x 1
+                gen_layers.append(nn.batch_norm(ll.Conv2DLayer(gen_layers[-1], 2048, 4, 2, pad=1, nonlinearity=nn.lrelu)))          
+                # flatten this out
+		gen_layers.append(ll.FlattenLayer(gen_layers[-1]))
+		# concat with noise
+		gen_layers.append(ll.ConcatLayer([input, gen_layers[-1]]))
+	        latent_size = 100 + 2048
+	    else : 
+		gen_layers = [input]
+		latent_size = 100	
+
             
 	    #gen_layers.append(nn.batch_norm(ll.DenseLayer(gen_layers[-1], num_units=5 * 5 * 512, W=Normal(0.05), nonlinearity=nn.relu), g=None))
-            gen_layers.append(ll.ReshapeLayer(gen_layers[-1], (self.batch_size, 100, 1, 1)))
+            gen_layers.append(ll.ReshapeLayer(gen_layers[-1], (self.batch_size, latent_size, 1, 1)))
+            
             gen_layers.append(nn.batch_norm(nn.Deconv2DLayer(gen_layers[-1], (self.batch_size, 256, 2, 2), (5, 5), W=Normal(0.02),nonlinearity=nn.relu), g=None))  # 1 -> 2
+            
             gen_layers.append(nn.batch_norm(nn.Deconv2DLayer(gen_layers[-1], (self.batch_size, 128, 4, 4), (5, 5), W=Normal(0.02),nonlinearity=nn.relu), g=None))  # 2 -> 4
-	    gen_layers.append(nn.batch_norm(nn.Deconv2DLayer(gen_layers[-1], (self.batch_size, 64, 8, 8), (5, 5), W=Normal(0.02),nonlinearity=nn.relu), g=None))  # 4 -> 8
-	    gen_layers.append(nn.batch_norm(nn.Deconv2DLayer(gen_layers[-1], (self.batch_size, 64, 16, 16), (5, 5), W=Normal(0.02),nonlinearity=nn.relu), g=None))  # 8 -> 16
-	    gen_layers.append(nn.batch_norm(nn.Deconv2DLayer(gen_layers[-1], (self.batch_size, 32, 32, 32), (5, 5), W=Normal(0.02),nonlinearity=nn.relu), g=None))  # 8 -> 16
+	    
+            gen_layers.append(nn.batch_norm(nn.Deconv2DLayer(gen_layers[-1], (self.batch_size, 64, 8, 8), (5, 5), W=Normal(0.02),nonlinearity=nn.relu), g=None))  # 4 -> 8
+	    
+            gen_layers.append(nn.batch_norm(nn.Deconv2DLayer(gen_layers[-1], (self.batch_size, 64, 16, 16), (5, 5), W=Normal(0.02),nonlinearity=nn.relu), g=None))  # 8 -> 16
+	    
+            gen_layers.append(nn.batch_norm(nn.Deconv2DLayer(gen_layers[-1], (self.batch_size, 32, 32, 32), (5, 5), W=Normal(0.02),nonlinearity=nn.relu), g=None))  # 8 -> 16
+            
             gen_layers.append((nn.Deconv2DLayer(gen_layers[-1], (self.batch_size, 3, 64, 64), (5, 5), W=Normal(0.02),nonlinearity=T.tanh)))  # 16 -> 32
             
 	    for layer in gen_layers : 
