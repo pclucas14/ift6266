@@ -11,7 +11,7 @@ import lasagne
 
 # taken from lasagne gitbub
 
-home = '/home2/ift6ed47/'
+home = '/home/lucas/Desktop/' #'/home2/ift6ed47/'
 # ############################# Batch iterator ###############################
 # This is just a simple helper function iterating over training data in
 # mini-batches of a particular size, optionally in random order. It assumes
@@ -70,7 +70,7 @@ def load_dataset(ds_split=(0.95,0.05,0.), shuffle=False, sample=False, resize=Fa
         print('found cached version')
         return trainx, trainy, trainz, testx, testy, testz
     except : 
-        data_path = home + "ift6266/inpainting"#"C:/Users/pcluc/Desktop/School/UdeM/Deep Learning 5xx/project/data"
+        data_path = home + "ift6266/inpainting"
         split="train2014"
         data_path = os.path.join(data_path, split)
         imgs = glob.glob(data_path + "/*.jpg")
@@ -175,7 +175,7 @@ def fit_middle_tensor(contour, pred, batch_size=256):
     indices = np.array([list(np.arange(0,batch_size)),[0,1,2], list(np.arange(center[0]-16,center[0]+16)), list(np.arange(center[0]-16,center[0]+16))])
     ind_t = tuple([slice(0, batch_size), slice(0,3), slice(center[0]-16,center[0]+16), slice(center[0]-16,center[0]+16)])
     
-    final = T.set_subtensor(final[:, :, center[0]-16:center[0]+16, center[0]-16:center[0]+16],pred)
+    final = T.set_subtensor(final[:, :, center[0]-16:center[0]+16, center[0]-16:center[0]+16],pred[:,:,16:48, 16:48])
     
     return final
 
@@ -323,11 +323,8 @@ y = T.tensor4()
 #combine_tensors = theano.function([x,y],z)
 
 a = fit_middle_tensor(x,y)
-b = fit_middle_extra_tensor(x,y)
-c = contour_delta_tensor(x,y)
 fill_middle = theano.function([x,y],a)
-fill_middle_extra = theano.function([x,y],b)
-get_contour = theano.function([x,y],c)
+
 #%%
 '''
 result = fill_middle(input, samples)* 77 + 83

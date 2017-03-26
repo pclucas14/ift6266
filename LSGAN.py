@@ -27,43 +27,45 @@ from GAN import *
 # Hyperparameters :   
 batch_size = 64
 num_epochs = 50
-version = 99
+version = '_cond_'
 name = 'lsgan' + str(version)
 load_params = False 
 
 initial_eta = 1e-4
-full_img = False
+encode_input = True
+
 logging.basicConfig(filename=(name + ".log"), level=logging.INFO)
 logging.info('Logging start')
-clip=0.1
 home_dir = '/home2/ift6ed47/' 
 
-GAN = GAN(version=2, batch_size=batch_size)
+GAN = GAN(version=2, batch_size=batch_size, encode=encode_input)
 generator = GAN.generator[-1]
 critic = GAN.critic[-1]
 
 if load_params:
-    logging.info('loaded params from file')
-    print 'loading params from file' 
+    logging.info('loaded params from file'); print 'loading params from file' 
     last_saved_epoch = '10'
     update_model_params(generator, home_dir + 'models/' + name + '_gen_' + last_saved_epoch + '.npz')
     update_model_params(critic, home_dir + ' models/' + name + '_disc_' + last_saved_epoch + '.npz')
-    logging.info('parameters successfully loaded')
-    print 'parameters successfully loaded' 	
+    logging.info('parameters successfully loaded'); print 'parameters successfully loaded' 	
 
 #%%
 logging.info('param setup')
-gen_output = lasagne.layers.get_output(generator)
-gen_params = lasagne.layers.get_all_params(generator, trainable=True)
+gen_output = ll.get_output(generator)
+gen_params = ll.get_all_params(generator, trainable=True)
 
 eta = theano.shared(lasagne.utils.floatX(initial_eta))
 
-critic_output = lasagne.layers.get_output(critic)
+critic_output = ll.get_output(critic)
 
 # Create expression for passing real data through the critic
-real_out = lasagne.layers.get_output(critic, inputs=GAN.input_c)
-fake_out = lasagne.layers.get_output(critic,
-                            inputs=gen_output)
+real_out = ll.get_output(critic, inputs=GAN.input_c)
+
+if encode_input : 
+    critic_input = fit_middle_tensor(GAN.input_, gen_output)
+else : 
+    critic_input = gen_output
+fake_out = ll.get_output(critic, inputs=critic_input)
 
 '''
 # hidden layers for feature matching
@@ -77,7 +79,7 @@ loss_gen_fm = T.mean(abs(m1-m2)) # feature matching loss
 a, b, c = 0, 1, 1
 
 # Create update expressions for training
-critic_params = lasagne.layers.get_all_params(critic, trainable=True)
+critic_params = ll.get_all_params(critic, trainable=True)
 critic_loss = (lasagne.objectives.squared_error(real_out, b).mean() +
 		 lasagne.objectives.squared_error(fake_out, a).mean()) 
 
@@ -99,42 +101,29 @@ gen_updates= lasagne.updates.adam(
 critic_updates = lasagne.updates.adam(
     critic_grads, critic_params, learning_rate=eta)
 
-'''
-# leftover from WGAN
-# Clip critic parameters in a limited range around zero (except biases)
-critic_clip_updates=[]
-for param in lasagne.layers.get_all_params(critic, trainable=True,regularizable=True):
-    critic_clip_updates.append([param, T.clip(param, -clip, clip)])
-critic_clip_fn = theano.function([],updates=critic_clip_updates)
-'''
-
-train_critic = theano.function(inputs=[GAN.input_c], #inputs=[model.input_, model.input_c],
+train_critic = theano.function(inputs=[GAN.input_, GAN.input_c], 
                                outputs=[real_out.mean(),
                                         fake_out.mean(),
                                         critic_loss,
                                         critic_grads_norm], 
                                updates=critic_updates,
-                               #givens={model.noise_var: noise},
                                name='train_critic')
 
-train_gen = theano.function(inputs=[],#,model.input_, model.output_],#, model.input_c],
+train_gen = theano.function(inputs=[GAN.input_],
                            outputs=[(fake_out > .5).mean(), 
-                                    #gen_mse_grad_norm,
                                     gen_grads_norm,
                                     gen_loss, 
                                     gen_output], 
-                           #givens={model.noise_var: noise},
                            updates = gen_updates,
                            name='train_gen')
 
-test_gen = theano.function(inputs=[],#model.input_],
-                           #givens={model.noise_var: noise},
-                           outputs=[gen_output], 
+test_gen = theano.function(inputs=[GAN.input_],
+                           outputs=[critic_input], 
                            name='test_gen')
 
 #%%
 logging.info('loading data')
-trainx, trainy, trainz, testx, testy, testz = load_dataset(sample=False, extra=4, normalize=True)
+trainx, trainy, trainz, testx, testy, testz = load_dataset(sample=True, extra=4, normalize=True)
 logging.info('data loaded')
 
 batches = iterate_minibatches(trainx, trainz, batch_size, shuffle=True,
@@ -157,20 +146,20 @@ for epoch in range(0, 3000) :
     for _ in range(50):
         # train autoencoder
         for _ in range(gen_iter):
-            #input, target = next(batches)
-            acc_gen, gen_grad_norm, loss_gen, pred = train_gen()#(input, target)#, target)
+            input, target = next(batches)
+            acc_gen, gen_grad_norm, loss_gen, pred = train_gen(input)#(input, target)#, target)
             gen_err += np.array([acc_gen, gen_grad_norm, loss_gen])
             updates_gen += 1
 
 	# train discriminator
         for _ in range(critic_iter):
             input, target = next(batches)
-            disc_err += np.array([train_critic(target)])
+            disc_err += np.array([train_critic(input, target)])
             #critic_clip_fn()
 	    updates_critic += 1
 
     # test it out 
-    samples = test_gen()#input_test)
+    samples = test_gen(input_test)
     samples = samples[0]
     result = samples*77.3 + 86.3#fill_middle_extra(input_test, samples)* 77.3 + 86.3
     result = result.transpose(0,2,3,1).astype('uint8')
@@ -178,8 +167,8 @@ for epoch in range(0, 3000) :
     saveImage(result, 'samples_lsgan_', epoch)
     
     if epoch % 5 == 0 :
-        np.savez(home + 'models/' + str(name) + '_disc_' + str(epoch) + '.npz', *lasagne.layers.get_all_param_values(critic))
-        np.savez(home + 'models/' + str(name) + '_gen_' + str(epoch) + '.npz', *lasagne.layers.get_all_param_values(generator))
+        np.savez(home + 'models/' + str(name) + '_disc_' + str(epoch) + '.npz', *ll.get_all_param_values(critic))
+        np.savez(home + 'models/' + str(name) + '_gen_' + str(epoch) + '.npz', *ll.get_all_param_values(generator))
     
     # Then we print the results for this epoch:
     print("  discriminator loss:\t\t{}".format(disc_err / updates_critic))

@@ -20,7 +20,7 @@ import nn
 class representing an actual model (lasagne/theano)
 '''
 class GAN :
-    def __init__(self, name='GAN', version=1, batch_size=64):
+    def __init__(self, name='GAN', version=1, batch_size=64, encode=False):
         self.name = name
         self.version = version
         self.batch_size = batch_size
@@ -29,7 +29,7 @@ class GAN :
         self.output_ = T.tensor4('generator output')       
         self.input_c = T.tensor4('critic/disc input')
         
-        self.generator = self.build_generator()
+        self.generator = self.build_generator(encode=encode)
         self.critic = self.build_critic()
     '''
     save parameters of lasagne model
@@ -66,7 +66,7 @@ class GAN :
     '''
     contruct generator. Architeture based on DCGAN (if you neglect the encoder part). 
     '''
-    def build_generator(self, version=1, encoder=True):
+    def build_generator(self, version=1, encode=False):
     
         from lasagne.layers import TransposedConv2DLayer as Deconv2DLayer
         
@@ -76,7 +76,7 @@ class GAN :
         input = ll.InputLayer(shape=noise_dim, input_var=noise)
 
 	if version == 1:  
-	    if encoder : 
+	    if encode : 
                 gen_layers = [ll.InputLayer(shape=(self.batch_size, 3, 64, 64), input_var=self.input_)]
                 # b_s x 3 x 64 x 64 --> b_s x 64 x 32 x 32
                 gen_layers.append(nn.batch_norm(ll.Conv2DLayer(gen_layers[-1], 64, 4, 2, pad=1, nonlinearity=nn.lrelu)))
@@ -88,7 +88,7 @@ class GAN :
                 gen_layers.append(nn.batch_norm(ll.Conv2DLayer(gen_layers[-1], 512, 4, 2, pad=1, nonlinearity=nn.lrelu)))
                 # b_s x 512 x 4 x 4 --> b_s x 1024 x 2 x 2
                 gen_layers.append(nn.batch_norm(ll.Conv2DLayer(gen_layers[-1], 1024, 4, 2, pad=1, nonlinearity=nn.lrelu)))          
-		# b_s x 1024 x 2 x 2 --> b_s x 2048 x 1 x 1
+		        # b_s x 1024 x 2 x 2 --> b_s x 2048 x 1 x 1
                 gen_layers.append(nn.batch_norm(ll.Conv2DLayer(gen_layers[-1], 2048, 4, 2, pad=1, nonlinearity=nn.lrelu)))          
                 # flatten this out
 		gen_layers.append(ll.FlattenLayer(gen_layers[-1]))
@@ -100,7 +100,7 @@ class GAN :
 		latent_size = 100	
 
             
-	    #gen_layers.append(nn.batch_norm(ll.DenseLayer(gen_layers[-1], num_units=5 * 5 * 512, W=Normal(0.05), nonlinearity=nn.relu), g=None))
+	        #gen_layers.append(nn.batch_norm(ll.DenseLayer(gen_layers[-1], num_units=5 * 5 * 512, W=Normal(0.05), nonlinearity=nn.relu), g=None))
             gen_layers.append(ll.ReshapeLayer(gen_layers[-1], (self.batch_size, latent_size, 1, 1)))
             
             gen_layers.append(nn.batch_norm(nn.Deconv2DLayer(gen_layers[-1], (self.batch_size, 256, 2, 2), (5, 5), W=Normal(0.02),nonlinearity=nn.relu), g=None))  # 1 -> 2
@@ -113,8 +113,14 @@ class GAN :
 	    
             gen_layers.append(nn.batch_norm(nn.Deconv2DLayer(gen_layers[-1], (self.batch_size, 32, 32, 32), (5, 5), W=Normal(0.02),nonlinearity=nn.relu), g=None))  # 8 -> 16
             
-            gen_layers.append((nn.Deconv2DLayer(gen_layers[-1], (self.batch_size, 3, 64, 64), (5, 5), W=Normal(0.02),nonlinearity=T.tanh)))  # 16 -> 32
-            
+            gen_layers.append(nn.Deconv2DLayer(gen_layers[-1], (self.batch_size, 32, 64, 64), (5, 5), W=Normal(0.02),nonlinearity=nn.relu))  # 16 -> 32
+
+            if encode : 
+                cropped_image = gen_layers[0]
+                gen_layers.append(ll.ConcatLayer([gen_layers[-1], cropped_image], axis=1))
+
+            gen_layers.append(Deconv2DLayer(gen_layers[-1], num_filters=3, filter_size=5, W=Normal(0.02), nonlinearity=T.tanh, crop=2))  # 16 -> 32
+        
 	    for layer in gen_layers : 
                 print layer.output_shape
             print ''
@@ -131,20 +137,23 @@ class GAN :
 	if version==1:
 	    from lasagne.nonlinearities import sigmoid
             disc_layers = [ll.InputLayer(shape=(None, 3, 64, 64), input_var=self.input_c)]
-            # b_s x 3 x 40 x 40 --> b_s x 32 x 20 x 20
+            # b_s x 3 x 64 x 64 --> b_s x 32 x 32 x 32
             disc_layers.append(nn.batch_norm(ll.Conv2DLayer(disc_layers[-1], 32, (3,3), pad=1, stride=2,  W=Normal(0.03), nonlinearity=nn.lrelu)))#nn.weight_norm
-            #disc_layers.append(ll.DropoutLayer(disc_layers[-1], p=0.5))
-            # b_s x 32 x 20 x 20 --> b_s x 64 x 10 x 10 
+            
+            disc_layers.append(ll.DropoutLayer(disc_layers[-1], p=0.5))
+            # b_s x 32 x 32 x 32 --> b_s x 64 x 16 x 16 
             disc_layers.append(nn.batch_norm(ll.Conv2DLayer(disc_layers[-1], 64, (3,3), pad=1, stride=2,  W=Normal(0.03), nonlinearity=nn.lrelu)))#nn.weight_norm
-            #disc_layers.append(ll.DropoutLayer(disc_layers[-1], p=0.5))
-            # b_s x 64 x 10 x 10 --> b_s x 128 x 5 x 5
+            # b_s x 64 x 16 x 16 --> b_s x 128 x 8 x 8
             disc_layers.append(nn.batch_norm(ll.Conv2DLayer(disc_layers[-1], 128, (3,3), pad=1, stride=2,  W=Normal(0.03),  nonlinearity=nn.lrelu)))#nn.weight_norm
-            # b_s x 128 x 5 x 5 --> b_s x 256 x 5 x 5
+            # b_s x 128 x 8 x 8 --> b_s x 256 x 4 x 4
             disc_layers.append(nn.batch_norm(ll.Conv2DLayer(disc_layers[-1], 256, (3,3), pad=1, stride=2,  W=Normal(0.03), nonlinearity=nn.lrelu)))#nn.weight_norm
             
             disc_layers.append(nn.batch_norm(ll.Conv2DLayer(disc_layers[-1], 512, (3,3), pad=1, stride=2,  W=Normal(0.03), nonlinearity=nn.lrelu)))#nn.weight_norm
-	    disc_layers.append(ll.GlobalPoolLayer(disc_layers[-1]))
+	        
+            disc_layers.append(ll.GlobalPoolLayer(disc_layers[-1]))
+            
             disc_layers.append(nn.MinibatchLayer(disc_layers[-1], num_kernels=100))
+            
             disc_layers.append((ll.DenseLayer(disc_layers[-1], num_units=1, W=Normal(0.03), nonlinearity=None)))#nn.weight_norm, train_g=True, init_stdv=0.1))#nn.weight_norm
             
             for layer in disc_layers : 
