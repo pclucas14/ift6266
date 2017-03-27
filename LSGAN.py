@@ -32,11 +32,11 @@ name = 'lsgan' + str(version)
 load_params = False 
 
 initial_eta = 1e-4
-encode_input = True
+encode_input = False
 
 logging.basicConfig(filename=(name + ".log"), level=logging.INFO)
 logging.info('Logging start')
-home_dir = '/home2/ift6ed47/' 
+home_dir = '/home2/ift6ed47/' #'/home/lucas/Desktop/'
 
 GAN = GAN(version=2, batch_size=batch_size, encode=encode_input)
 generator = GAN.generator[-1]
@@ -61,10 +61,9 @@ critic_output = ll.get_output(critic)
 # Create expression for passing real data through the critic
 real_out = ll.get_output(critic, inputs=GAN.input_c)
 
-if encode_input : 
-    critic_input = fit_middle_tensor(GAN.input_, gen_output)
-else : 
-    critic_input = gen_output
+
+critic_input = combine_tensor_images(GAN.input_, gen_output, batch_size)
+
 fake_out = ll.get_output(critic, inputs=critic_input)
 
 '''
@@ -143,23 +142,23 @@ for epoch in range(0, 3000) :
     gen_iter = 1
     critic_iter = 1
     
-    for _ in range(50):
+    for _ in range(5):
         # train autoencoder
         for _ in range(gen_iter):
-            input, target = next(batches)
-            acc_gen, gen_grad_norm, loss_gen, pred = train_gen(input)#(input, target)#, target)
+            _, target = next(batches)
+            acc_gen, gen_grad_norm, loss_gen, pred = train_gen(target)#(input, target)#, target)
             gen_err += np.array([acc_gen, gen_grad_norm, loss_gen])
             updates_gen += 1
 
 	# train discriminator
         for _ in range(critic_iter):
-            input, target = next(batches)
-            disc_err += np.array([train_critic(input, target)])
+            _, target = next(batches)
+            disc_err += np.array([train_critic(target, target)])
             #critic_clip_fn()
 	    updates_critic += 1
 
     # test it out 
-    samples = test_gen(input_test)
+    samples = test_gen(target_test)#(input_test)
     samples = samples[0]
     result = samples*77.3 + 86.3#fill_middle_extra(input_test, samples)* 77.3 + 86.3
     result = result.transpose(0,2,3,1).astype('uint8')

@@ -3,15 +3,18 @@ from PIL import Image
 import os
 import glob
 import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import theano.tensor as T
 import theano
 import lasagne
+import lasagne.layers as ll
+matplotlib.use('Agg')
 
-# taken from lasagne gitbub
 
-home = '/home/lucas/Desktop/' #'/home2/ift6ed47/'
+home = '/home2/ift6ed47/' #'/home/lucas/Desktop/'  
+global mask
+mask = None
+
 # ############################# Batch iterator ###############################
 # This is just a simple helper function iterating over training data in
 # mini-batches of a particular size, optionally in random order. It assumes
@@ -143,19 +146,68 @@ def combine_images(real, pred):
     return mixed
 
 #%%
-def combine_tensor_images(real, pred, batch_size, masks=None):
+# combines 2 64 x 64 images, real gives outer part, pred gives inner part
+def combine_tensor_images(real, pred, batch_size):
+    global mask
+    if mask is None : 
+        mask = T.zeros(shape=(batch_size, 1, 64, 64), dtype=theano.config.floatX)
+        mask = T.set_subtensor(mask[:, :, 16:48, 16:48], 1.)
 
-    if masks == None : 
-        mask, mask_rev = create_tensor_masks(batch_size)
-    else : 
-        mask, mask_rev = masks
-
-    out =  real * mask + (1-mask) * pred
+    # inner + outer part
+    out =  pred * mask + (1-mask) * real
     return out
+
+# method that takes the original image, downsizes it via pooling and layer repeat to 
+# "fit" with intermediate generator's output 
+# gen_output and masked_images are both Lasagne Layers (InputLayer, BatchNormLayer)
+def reset_deconv(masked_image, gen_output):
+
+    # first we check by max pooling ratio : 
+    b_s, channel_gen_out, height_gen_out, width_gen_out = ll.get_output_shape(gen_output)
+    b_s, channel_img, height_img, width_img = ll.get_output_shape(masked_image)
+
+    assert height_img % height_gen_out == 0
+
+    pool_size = height_img / height_gen_out 
+    channel_repeat = channel_gen_out / channel_img
+    repeat_red, repeat_green, repeat_blue = channel_repeat, channel_repeat, channel_repeat
+    repeat_blue += channel_gen_out % channel_repeat
+    # repeat_blue = 3
+
+    # step 1 : apply max pooling to fit height/width
+    pooled = ll.MaxPool2DLayer(masked_image, pool_size=pool_size)
+
+    # step 2 : repeat colors of pooled layer
+    # I just realized that Lasagne does not have a RepeatLayer module like Keras, 
+    # So I'll have to switch back to Theano to do this. Thankfully, Philip Paquette
+    # has already implemented something similar in his repo, so I'll take his. Give 
+    # credit where it's due. 
+
+    pooled_ = ll.get_output(pooled)
+    gen_output_ = ll.get_output(gen_output)
+
+    downsized_image_ = T.concatenate([
+        T.repeat(pooled_[:, 0, None, :, :], repeat_red, axis=1),
+        T.repeat(pooled_[:, 1, None, :, :], repeat_green, axis=1),
+        T.repeat(pooled_[:, 2, None, :, :], repeat_blue, axis=1)], axis=1)
+
+    # here, downsized_image_ and gen_output_ should be 2 tensors of equal shape
+    # we simply average them out here
+
+    avgd_ = (gen_output_ + downsized_image_ ) #/ 2
+
+    # put it back into lasagne format (InputLayer) and return it. 
+    return ll.InputLayer(shape=ll.get_output_shape(gen_output), input_var=avgd_)
+
+    
+    
+
+
+
+
     
 
 #%%
-
 def fit_middle(contour, pred):
     #assert contour.shape == (-1, 3, 64, 64)
     #assert pred.shape == (-1, 3, 32, 32)
@@ -166,18 +218,6 @@ def fit_middle(contour, pred):
     
     return final
 
-def fit_middle_tensor(contour, pred, batch_size=256):
-    #assert contour.shape == (-1, 3, 64, 64)
-    #assert pred.shape == (-1, 3, 32, 32)
-    center = (32,32)
-    
-    final  = contour
-    indices = np.array([list(np.arange(0,batch_size)),[0,1,2], list(np.arange(center[0]-16,center[0]+16)), list(np.arange(center[0]-16,center[0]+16))])
-    ind_t = tuple([slice(0, batch_size), slice(0,3), slice(center[0]-16,center[0]+16), slice(center[0]-16,center[0]+16)])
-    
-    final = T.set_subtensor(final[:, :, center[0]-16:center[0]+16, center[0]-16:center[0]+16],pred[:,:,16:48, 16:48])
-    
-    return final
 
 def fit_middle_extra(contour, pred, extra=4):
     #assert contour.shape == (-1, 3, 64, 64)
@@ -212,29 +252,7 @@ def contour_delta_tensor(contour, pred, extra=4):
     
     final = contour_p - pred_p
     
-    return final
-
-
-    
-def create_tensor_masks(batch_size):
-    center = (32,32)
-    # note : the maskes must be built in the dimensions in which the image is
-    # displayed. if not transpose operation fucks them up.
-    expected_shape= (batch_size,3,64,64)
-    mask = np.ones(expected_shape)
-    mask_rev = np.zeros(expected_shape)
-    mask[:,:,center[0]-16:center[0]+16, center[1]-16:center[1]+16] = 0
-    mask_rev[:,:,center[0]-16:center[0]+16, center[1]-16:center[1]+16] = 1
-    # now, reshape the masks in the proper dimensions 
-    # mask = mask.reshape((-1, 3, 64, 64))
-    # mask_rev = mask_rev.reshape((-1, 3, 64, 64))
-    mask = mask.astype('float32')
-    mask_rev = mask.astype('float32')
-    
-    
-    return theano.shared(mask), theano.shared(mask_rev)
-    
-    
+    return final 
 
 #%%
 def saveImage(imageData, imageName, epoch):
@@ -316,18 +334,18 @@ def update_model_params(model, param_path):
         param_values = [f['arr_%d' % i] for i in range(len(f.files))]
         lasagne.layers.set_all_param_values(model, param_values)  
 #%%
+'''
 # method to combine predictions 
 x = T.tensor4()
 y = T.tensor4()
-#z = combine_tensor_images(x,y, 64)
-#combine_tensors = theano.function([x,y],z)
+z = combine_tensor_images(x,y, 64)
+combine_tensors = theano.function([x,y],z)
 
-a = fit_middle_tensor(x,y)
-fill_middle = theano.function([x,y],a)
+a, b, c, d, e, f = load_dataset(sample=True)
 
 #%%
-'''
-result = fill_middle(input, samples)* 77 + 83
+
+result = combine_tensors(a[:64], c[64:128])* 77 + 83
 result = result.transpose(0,2,3,1).astype('uint8')
 Image.fromarray(result[0]).show() 
 
