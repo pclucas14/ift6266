@@ -73,18 +73,22 @@ class GAN :
     # generator takes as input uncropped image and crops it himself
     def build_generator(self, version=1, encode=False):
 
+	from lasagne.layers import TransposedConv2DLayer as Deconv2DLayer
         global mask
-        if mask is None : 
+        
+	if mask is None : 
             mask = T.zeros(shape=(self.batch_size, 1, 64, 64), dtype=theano.config.floatX)
             mask = T.set_subtensor(mask[:, :, 16:48, 16:48], 1.)
+	    self.mask = mask
     
-        from lasagne.layers import TransposedConv2DLayer as Deconv2DLayer
+       	
         noise_dim = (self.batch_size, 100)
         theano_rng = MRG_RandomStreams(rng.randint(2 ** 15))
         noise = theano_rng.uniform(size=noise_dim)        
-        input = ll.InputLayer(shape=noise_dim, input_var=noise)
+        mask_color = T.cast(T.cast(theano_rng.uniform(size=(self.batch_size,), low=0., high=2.), 'int16').dimshuffle(0, 'x', 'x', 'x') * mask, dtype=theano.config.floatX)
+	input = ll.InputLayer(shape=noise_dim, input_var=noise)
 
-        cropped_image = mask * self.input_
+        cropped_image = T.cast(T.zeros_like(self.input_)*mask + (1. - mask) * self.input_ + mask_color, dtype=theano.config.floatX)
         cropped_image = ll.InputLayer(shape=(self.batch_size, 3, 64, 64), input_var=cropped_image)
 
         if version == 1:  
@@ -115,7 +119,7 @@ class GAN :
             gen_layers.append(ll.ReshapeLayer(gen_layers[-1], (self.batch_size, latent_size, 1, 1)))
             
             gen_layers.append(nn.batch_norm(nn.Deconv2DLayer(gen_layers[-1], (self.batch_size, 512, 2, 2), (5, 5), W=Normal(0.02),nonlinearity=nn.relu), g=None))  # 1 -> 2
-            gen_layers.append(reset_deconv(cropped_image, gen_layers[-1]))
+            #gen_layers.append(reset_deconv(cropped_image, gen_layers[-1]))
 
             gen_layers.append(nn.batch_norm(nn.Deconv2DLayer(gen_layers[-1], (self.batch_size, 256, 4, 4), (5, 5), W=Normal(0.02),nonlinearity=nn.relu), g=None))  # 2 -> 4
             gen_layers.append(reset_deconv(cropped_image, gen_layers[-1]))

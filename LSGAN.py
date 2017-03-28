@@ -27,7 +27,7 @@ from GAN import *
 # Hyperparameters :   
 batch_size = 64
 num_epochs = 50
-version = '_cond_'
+version = '_c2'
 name = 'lsgan' + str(version)
 load_params = False 
 
@@ -63,17 +63,22 @@ real_out = ll.get_output(critic, inputs=GAN.input_c)
 
 
 critic_input = combine_tensor_images(GAN.input_, gen_output, batch_size)
-
 fake_out = ll.get_output(critic, inputs=critic_input)
 
 '''
 # hidden layers for feature matching
-hid_real = ll.get_output(model.critic[-3], inputs=model.input_c, deterministic=False)
-hid_fake = ll.get_output(model.critic[-3], inputs=gen_output, deterministic=False)
+hid_real = ll.get_output(GAN.critic[-3], inputs=GAN.input_c, deterministic=False)
+hid_fake = ll.get_output(GAN.critic[-3], inputs=critic_input, deterministic=False)
 m1 = T.mean(hid_real,axis=0)
 m2 = T.mean(hid_fake,axis=0)
-loss_gen_fm = T.mean(abs(m1-m2)) # feature matching loss
+loss_gen_fm = lasagne.objectives.squared_error(m1, m2).mean()
 '''
+
+
+# border reconstruction
+loss_gen_border = lasagne.objectives.squared_error(GAN.input_ * (1. - GAN.mask), gen_output * (1. - GAN.mask)).mean()
+gen_border_updates = lasagne.updates.adam(loss_gen_border, gen_params, learning_rate=eta)
+
 
 a, b, c = 0, 1, 1
 
@@ -83,7 +88,7 @@ critic_loss = (lasagne.objectives.squared_error(real_out, b).mean() +
 		 lasagne.objectives.squared_error(fake_out, a).mean()) 
 
 
-gen_loss = lasagne.objectives.squared_error(fake_out, c).mean()# + loss_gen_fm
+gen_loss = lasagne.objectives.squared_error(fake_out, c).mean() 
 
 print 'loss and function setup'
 logging.info('loss and function setup')
@@ -108,7 +113,7 @@ train_critic = theano.function(inputs=[GAN.input_, GAN.input_c],
                                updates=critic_updates,
                                name='train_critic')
 
-train_gen = theano.function(inputs=[GAN.input_],
+train_gen = theano.function(inputs=[GAN.input_], #input_c is for feature matching
                            outputs=[(fake_out > .5).mean(), 
                                     gen_grads_norm,
                                     gen_loss, 
@@ -116,13 +121,18 @@ train_gen = theano.function(inputs=[GAN.input_],
                            updates = gen_updates,
                            name='train_gen')
 
+train_gen_border = theano.function(inputs=[GAN.input_], 
+		                   outputs=[loss_gen_border],
+				   updates = gen_border_updates,
+			           name='train_border_gen')
+
 test_gen = theano.function(inputs=[GAN.input_],
-                           outputs=[critic_input], 
+                           outputs=[critic_input, gen_output], 
                            name='test_gen')
 
 #%%
 logging.info('loading data')
-trainx, trainy, trainz, testx, testy, testz = load_dataset(sample=True, extra=4, normalize=True)
+trainx, trainy, trainz, testx, testy, testz = load_dataset(sample=False, extra=4, normalize=True)
 logging.info('data loaded')
 
 batches = iterate_minibatches(trainx, trainz, batch_size, shuffle=True,
@@ -140,14 +150,18 @@ for epoch in range(0, 3000) :
     disc_err = 0
     gen_err = 0
     gen_iter = 1
-    critic_iter = 1
-    
-    for _ in range(5):
+    border_epoch = 50   
+    critic_iter = 1 if epoch > border_epoch else 0    
+
+    for _ in range(50):
         # train autoencoder
         for _ in range(gen_iter):
             _, target = next(batches)
-            acc_gen, gen_grad_norm, loss_gen, pred = train_gen(target)#(input, target)#, target)
-            gen_err += np.array([acc_gen, gen_grad_norm, loss_gen])
+	    if epoch < border_epoch : 
+		gen_err += np.array(train_gen_border(target))
+	    else : 
+            	acc_gen, gen_grad_norm, loss_gen, pred = train_gen(target)#(input, target)#, target)
+            	gen_err += np.array([acc_gen, gen_grad_norm, loss_gen])
             updates_gen += 1
 
 	# train discriminator
@@ -158,22 +172,30 @@ for epoch in range(0, 3000) :
 	    updates_critic += 1
 
     # test it out 
-    samples = test_gen(target_test)#(input_test)
-    samples = samples[0]
-    result = samples*77.3 + 86.3#fill_middle_extra(input_test, samples)* 77.3 + 86.3
-    result = result.transpose(0,2,3,1).astype('uint8')
+    samples, raw_samples = test_gen(target_test)#(input_test)
+    samples = samples * 88.3 + 86.3
+    raw_samples = raw_samples * 88.3 + 86.3
+    # result = samples*77.3 + 86.3#fill_middle_extra(input_test, samples)* 77.3 + 86.3
+
+    raw_result = raw_samples.transpose(0,2,3,1).astype('uint8')
+    result = samples.transpose(0,2,3,1).astype('uint8')
     
-    saveImage(result, 'samples_lsgan_', epoch)
-    
-    if epoch % 5 == 0 :
+    saveImage(result, 'samples_' + name, epoch) 
+    saveImage(raw_result, 'samples_raw_' + name, epoch)
+
+    if epoch % 25 == 0 :
         np.savez(home + 'models/' + str(name) + '_disc_' + str(epoch) + '.npz', *ll.get_all_param_values(critic))
         np.savez(home + 'models/' + str(name) + '_gen_' + str(epoch) + '.npz', *ll.get_all_param_values(generator))
     
     # Then we print the results for this epoch:
-    print("  discriminator loss:\t\t{}".format(disc_err / updates_critic))
-    print("  generator loss:\t\t{}".format(gen_err / updates_gen))
+
     logging.info("epoch : " + str(epoch))
-    logging.info("  discriminator loss:\t\t{}".format(disc_err / updates_critic))
     logging.info("  generator loss:\t\t{}".format(gen_err / updates_gen))
+    print("  generator loss:\t\t{}".format(gen_err / updates_gen))
+    
+    if epoch > border_epoch : 
+    	print("  discriminator loss:\t\t{}".format(disc_err / updates_critic))
+    	logging.info("  discriminator loss:\t\t{}".format(disc_err / updates_critic))
+
           
 

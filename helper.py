@@ -61,8 +61,9 @@ def split_image(image,extra=0):
 
 def load_dataset(ds_split=(0.95,0.05,0.), shuffle=False, sample=False, resize=False, normalize=False, extra=False):
     print("Loading dataset")
+    name = 'data.bin' if normalize else 'data_og.bin'
     try :
-        f = file(home + "data.bin","rb")
+        f = file(home + name,"rb")
         trainx = np.load(f)
         trainy = np.load(f)
         trainz = np.load(f)
@@ -112,12 +113,14 @@ def load_dataset(ds_split=(0.95,0.05,0.), shuffle=False, sample=False, resize=Fa
             X = (X - np.mean(X)) / np.std(X)
             Y = (Y - np.mean(Y)) / np.std(Y)
             Z = (Z - np.mean(Z)) / np.std(Z)
+	    print 'mean z', np.mean(Z)
+            print 'std z', np.std(Z)
 
         amt = X.shape[0]
         idx1 = int(ds_split[0]*amt)
         idx2 = int((ds_split[0] + ds_split[1])*amt)
         
-        f = file(home + "data.bin","wb")
+        f = file(home + name ,"wb")
         np.save(f,X[:idx1])
         np.save(f,Y[:idx1])
         np.save(f,Z[:idx1])
@@ -192,21 +195,28 @@ def reset_deconv(masked_image, gen_output):
         T.repeat(pooled_[:, 2, None, :, :], repeat_blue, axis=1)], axis=1)
 
     # here, downsized_image_ and gen_output_ should be 2 tensors of equal shape
-    # we simply average them out here
-
-    avgd_ = (gen_output_ + downsized_image_ ) #/ 2
-
+    # we simply average them out here. EDIT : only average out overlapping parts. 
+    # for the center (mask) discard completely the downsized_image (as it is simply
+    # a black hole, and keep all gen_output_)
+    
+    if height_gen_out >= 4:
+        center = height_gen_out / 2
+        bottom = center - height_gen_out / 4
+        top = center + height_gen_out / 4
+        # print height_gen_out, center, bottom, top
+        middle_part = T.zeros(shape=ll.get_output_shape(gen_output), dtype=theano.config.floatX)
+        middle_part = T.set_subtensor(middle_part[:, :, bottom:top, bottom:top], gen_output_[:, :, bottom:top ,bottom:top])
+	downsized_image_ = T.set_subtensor(downsized_image_[:, :, bottom:top, bottom:top], 0. )
+	avgd_ = (downsized_image_ + middle_part) 
+        #avgd_ = (gen_output_ + downsized_image_  + middle_part) / 2
+    
+    else:
+        avgd_= (gen_output_ + downsized_image_) / 2
+    
     # put it back into lasagne format (InputLayer) and return it. 
     return ll.InputLayer(shape=ll.get_output_shape(gen_output), input_var=avgd_)
-
     
     
-
-
-
-
-    
-
 #%%
 def fit_middle(contour, pred):
     #assert contour.shape == (-1, 3, 64, 64)
