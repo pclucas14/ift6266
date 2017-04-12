@@ -1,14 +1,14 @@
 """
 neural network stuff, intended to be used with Lasagne
 """
-
+import theano
 import numpy as np
 import theano as th
 import theano.tensor as T
 import lasagne
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
+from theano.tensor.signal import pool
 
-# T.nnet.relu has some stability issues, this is better
 def relu(x):
     return T.maximum(x, 0)
     
@@ -168,6 +168,24 @@ class MinibatchLayer(lasagne.layers.Layer):
 
         return T.concatenate([input, f], axis=1)
 
+class ExtractMiddleLayer(lasagne.layers.Layer):
+    def __init__(self, incoming, extra=0, **kwargs):
+	super(ExtractMiddleLayer, self).__init__(incoming, **kwargs)
+	self.incoming_dim = lasagne.layers.get_output_shape(incoming)
+	self.extra = extra
+
+    def get_output_shape_for(self, input_shape):
+	extra = self.extra
+	return (input_shape[0], 3, 32 + 2*extra, 32 + 2*extra)#input_shape[1], input_shape[2]/2, input_shape[3]/3)
+
+    def get_output_for(self, input, **kwargs):
+        extra = self.extra
+        print self.incoming_dim, self.incoming_dim[0]
+        middle_part = T.zeros(shape=(self.incoming_dim[0], 3, 32 + 2*extra, 32 + 2*extra), dtype=theano.config.floatX)
+        middle_part = T.set_subtensor(middle_part[:, :, :, :], input[:, :, 16-extra:48+extra, 16-extra:48+extra])
+	return middle_part
+	
+
 class BatchNormLayer(lasagne.layers.Layer):
     def __init__(self, incoming, b=lasagne.init.Constant(0.), g=lasagne.init.Constant(1.), nonlinearity=relu, **kwargs):
         super(BatchNormLayer, self).__init__(incoming, **kwargs)
@@ -239,56 +257,96 @@ class GaussianNoiseLayer(lasagne.layers.Layer):
             return input + self.noise
 
 
-# /////////// older code used for MNIST ////////////
+# incoming is the previous TransposedConvolutionLayer
+# masked_image is a bs x 3 x 64 x 64 Tensor (NOT LASAGNE LAYER)
+# mixing_coef is a theano shared int
+class ResetDeconvLayer(lasagne.layers.Layer):
 
-# weight normalization
-def l2normalize(layer, train_scale=True):
-    W_param = layer.W
-    s = W_param.get_value().shape
-    if len(s)==4:
-        axes_to_sum = (1,2,3)
-        dimshuffle_args = [0,'x','x','x']
-        k = s[0]
-    else:
-        axes_to_sum = 0
-        dimshuffle_args = ['x',0]
-        k = s[1]
-    layer.W_scale = layer.add_param(lasagne.init.Constant(1.),
-                          (k,), name="W_scale", trainable=train_scale, regularizable=False)
-    layer.W = W_param * (layer.W_scale/T.sqrt(1e-6 + T.sum(T.square(W_param),axis=axes_to_sum))).dimshuffle(*dimshuffle_args)
-    return layer
+    def __init__(self, incoming, masked_image,mixing_coef, border=None, **kwargs):
+	super(ResetDeconvLayer, self).__init__(incoming, **kwargs)
+	self.incoming_dim = lasagne.layers.get_output_shape(incoming)
+	#self.input_shape = self.incoming_dim
+	self.masked_image = masked_image
+	self.name = 'reset deconv layer'
+	self.mixing_coef = mixing_coef#self.add_param(mixing_coef, (1,) , name="mix_coef", trainable=False, regularizable=False)
+	#self.input_layer = incoming.input_layer
+	self.border = border
 
-# fully connected layer with weight normalization
-class DenseLayer(lasagne.layers.Layer):
-    def __init__(self, incoming, num_units, theta=lasagne.init.Normal(0.1), b=lasagne.init.Constant(0.),
-                 weight_scale=lasagne.init.Constant(1.), train_scale=False, nonlinearity=relu, **kwargs):
-        super(DenseLayer, self).__init__(incoming, **kwargs)
-        self.nonlinearity = (lasagne.nonlinearities.identity if nonlinearity is None else nonlinearity)
-        self.num_units = num_units
-        num_inputs = int(np.prod(self.input_shape[1:]))
-        self.theta = self.add_param(theta, (num_inputs, num_units), name="theta")
-        self.weight_scale = self.add_param(weight_scale, (num_units,), name="weight_scale", trainable=train_scale)
-        self.W = self.theta * (self.weight_scale/T.sqrt(T.sum(T.square(self.theta),axis=0))).dimshuffle('x',0)
-        self.b = self.add_param(b, (num_units,), name="b")
+    def get_output_for(self, input, **kwargs):
+	# first we check by max pooling ratio : 
+    	b_s, channel_gen_out, height_gen_out, width_gen_out = self.incoming_dim
+    	# TODO : fetch this dynamically 
+	channel_img, height_img, width_img = 3, 64, 64
+
+        assert height_img % height_gen_out == 0
+
+    	pool_size = height_img / height_gen_out
+    	channel_repeat = channel_gen_out / channel_img
+    	repeat_red, repeat_green, repeat_blue = channel_repeat, channel_repeat, channel_repeat
+    	repeat_blue += channel_gen_out % channel_repeat
+	
+	# only apply MaxPool if input.shape[2:] != masked_image.shape[2:]
+	if pool_size != 1: 
+	    print 'pooling by' + str(pool_size)
+	    pooled_image = pool.pool_2d(self.masked_image, (pool_size, pool_size), ignore_border=True)
+	else : 
+	    print 'no pooling (should only be for last layer)'
+	    pooled_image = self.masked_image
+
+	# now we need to adjust the depth of the original image
+	if repeat_green != 1 : 
+	    print 'adding depth to original image'
+	    downsized_image = T.concatenate([
+        	T.repeat(pooled_image[:, 0, None, :, :], repeat_red, axis=1),
+        	T.repeat(pooled_image[:, 1, None, :, :], repeat_green, axis=1),
+        	T.repeat(pooled_image[:, 2, None, :, :], repeat_blue, axis=1)], axis=1)
+	else : 
+	    print 'no depth added (should only to the last layer)'
+	    downsized_image = self.masked_image
+
+        # here, downsized_image and input should be 2 tensors of equal shape
+        # we simply average them out here. EDIT : only average out overlapping parts. 
+        # for the center (mask) discard completely the downsized_image (as it is simply
+        # a black hole, and keep all of input)
+
+    	if height_gen_out >= 4:
+            center = height_gen_out / 2
+	    if self.border == None : 
+		top = center + height_gen_out / 4
+                bottom = center - height_gen_out / 4
+                print height_gen_out, center, bottom, top
+
+	        # middle_part should have borders = 0 and center = pooled image content
+	        middle_part = T.zeros(shape=self.incoming_dim, dtype=theano.config.floatX)
+                middle_part = T.set_subtensor(middle_part[:, :, bottom:top, bottom:top], input[:, :, bottom:top ,bottom:top])
+                outer_part =  input - middle_part
+	        # TODO : check if next line changes anythin (it shouldn't)
+	        downsized_image_ = T.set_subtensor(downsized_image[:, :, bottom:top, bottom:top], 0. )
+
+	    else :
+		# TODO: finish this section
+		# goal : take only a small outer border of the original image, and the rest leave as 
+		print 'border', self.border
+		top = height_gen_out - self.border
+		bottom = self.border 
+		inner_part = T.zeros(shape=self.incoming_dim, dtype=theano.config.floatX)
+		generated_middle = T.set_subtensor(inner_part[:, :, bottom:top, bottom:top], input[:, :, bottom:top, bottom:top])
+		generated_border = input - generated_middle
+		downsized_image_border = T.set_subtensor(downsized_image[:, :, bottom:top, bottom:top], 0.)
+		avgd_ = generated_middle + self.mixing_coef * downsized_image_border + (1. - self.mixing_coef) * generated_border
+		return avgd_		
+        
+
+            # avgd_ = (downsized_image_ + middle_part) * mixing_coef + (1. - mixing_coef) * gen_output_
+	    avgd_ = middle_part + self.mixing_coef * downsized_image_  + (1. - self.mixing_coef) * outer_part
+
+        else:
+	    # TODO : remove this  
+	    print 'should never get here'
+            avgd_= (gen_output_ + downsized_image_) / 2
+
+	return avgd_
+
 
     def get_output_shape_for(self, input_shape):
-        return (input_shape[0], self.num_units)
-
-    def get_output_for(self, input, init=False, deterministic=False, **kwargs):
-        if input.ndim > 2:
-            # if the input has more than two dimensions, flatten it into a
-            # batch of feature vectors.
-            input = input.flatten(2)
-
-        activation = T.dot(input, self.W)
-
-        if init:
-            ma = T.mean(activation, axis=0)
-            activation -= ma.dimshuffle('x',0)
-            stdv = T.sqrt(T.mean(T.square(activation),axis=0))
-            activation /= stdv.dimshuffle('x',0)
-            self.init_updates = [(self.weight_scale, self.weight_scale/stdv), (self.b, -ma/stdv)]
-        else:
-            activation += self.b.dimshuffle('x', 0)
-
-        return self.nonlinearity(activation)
+	    return input_shape

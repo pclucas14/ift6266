@@ -11,9 +11,11 @@ import lasagne.layers as ll
 matplotlib.use('Agg')
 
 
-home = '/home2/ift6ed47/' #'/home/lucas/Desktop/'  
+home = '/home/ml/lpagec/' #'/home/2014/lpagec/'#'/home2/ift6ed47/' #'/home/lucas/Desktop/'  
 global mask
+global mask_border
 mask = None
+mask_border = None
 
 # ############################# Batch iterator ###############################
 # This is just a simple helper function iterating over training data in
@@ -27,9 +29,8 @@ mask = None
 # If the size of the data is not a multiple of `batchsize`, it will not
 # return the last (remaining) mini-batch.
 
-def iterate_minibatches(inputs, targets,  batchsize, full=None, shuffle=False, 
+def iterate_minibatches(inputs,  batchsize, full=None, shuffle=False, 
                         forever=False):
-    assert len(inputs) == len(targets)
     
     while True : 
         if shuffle:
@@ -40,7 +41,7 @@ def iterate_minibatches(inputs, targets,  batchsize, full=None, shuffle=False,
                 excerpt = indices[start_idx:start_idx + batchsize]
             else:
                 excerpt = slice(start_idx, start_idx + batchsize)
-            yield inputs[excerpt], targets[excerpt]#, full[excerpt]
+            yield inputs[excerpt]#, targets[excerpt]#, full[excerpt]
         if not forever: 
             break
 
@@ -59,26 +60,27 @@ def split_image(image,extra=0):
 
         return input,  target, img_array
 
-def load_dataset(ds_split=(0.95,0.05,0.), shuffle=False, sample=False, resize=False, normalize=False, extra=False):
+def load_dataset(ds_split=(0.95,0.05,0.), shuffle=False, sample=False, resize=False, normalize=False, extra=False, easy=True):
     print("Loading dataset")
     name = 'data.bin' if normalize else 'data_og.bin'
     try :
         f = file(home + name,"rb")
-        trainx = np.load(f)
-        trainy = np.load(f)
+        #trainx = np.load(f)
+        #trainy = np.load(f)
         trainz = np.load(f)
-        testx = np.load(f)
-        testy = np.load(f)
-        testz = np.load(f)
+        #testx = np.load(f)
+        #testy = np.load(f)
+        #testz = np.load(f)
         f.close()
         print('found cached version')
-        return trainx, trainy, trainz, testx, testy, testz
-    except : 
+        return trainz, trainz.shape[0]#trainx, trainy, trainz, testx, testy, testz
+    except :
+	print 'loading raw images' 
         data_path = home + "ift6266/inpainting"
         split="train2014"
         data_path = os.path.join(data_path, split)
         imgs = glob.glob(data_path + "/*.jpg")
-    
+   	print data_path 
         # sample a few TODO : remove this 
         if sample : imgs = imgs[14000:18000]
         
@@ -86,50 +88,63 @@ def load_dataset(ds_split=(0.95,0.05,0.), shuffle=False, sample=False, resize=Fa
         for i, img_path in enumerate(imgs):
             try : 
                 img = Image.open(img_path)
-                x, y, z = split_image(img, extra=extra)
-                if resize : 
-                    y = scipy.misc.imresize(y, (28,28,1))
+		img = np.array(img)
+		if easy : 
+	            if len(img.shape) != 3 : 
+			continue
+		    Z.append(img)
+		else : 
+                    x, y, z = split_image(img, extra=extra)
+                    if resize : 
+                    	y = scipy.misc.imresize(y, (28,28,1))
                     #Image.fromarray(y).show()
     
-                X.append(x)
-                Y.append(y)
-                Z.append(z)
+                    X.append(x)
+                    Y.append(y)
+                    Z.append(z)
             except Exception as e: 
                 print e
                 pass
-    
-        Image.fromarray(X[-1]).show()
-        Image.fromarray(Y[-1]).show()
-    
-        X = np.array(X)
-        Y = np.array(Y)
+    	
+	print str(len(Z)) + ' images found.'
+        Image.fromarray(Z[-1]).show()
+        #Image.fromarray(Y[-1]).show()
+   	#import pdb; pdb.set_trace()
+        #X = np.array(X)
+        #Y = np.array(Y)
         Z = np.array(Z)
         
-        X = np.transpose(X, axes=[0,3,1,2]).astype('float32')
-        Y = np.transpose(Y, axes=[0,3,1,2]).astype('float32')
+        #X = np.transpose(X, axes=[0,3,1,2]).astype('float32')
+        #Y = np.transpose(Y, axes=[0,3,1,2]).astype('float32')
         Z = np.transpose(Z, axes=[0,3,1,2]).astype('float32')
         
-        if normalize : 
-            X = (X - np.mean(X)) / np.std(X)
-            Y = (Y - np.mean(Y)) / np.std(Y)
-            Z = (Z - np.mean(Z)) / np.std(Z)
-	    print 'mean z', np.mean(Z)
-            print 'std z', np.std(Z)
+        if normalize :
+	    mean = np.mean(Z)
+ 	    std = np.std(Z) 
 
-        amt = X.shape[0]
+            #X = (X - np.mean(X)) / np.std(X)
+            #Y = (Y - np.mean(Y)) / np.std(Y)
+            Z = (Z - mean) / std
+	    print 'mean z', mean
+            print 'std z', std
+
+        amt = Z.shape[0]
         idx1 = int(ds_split[0]*amt)
         idx2 = int((ds_split[0] + ds_split[1])*amt)
         
         f = file(home + name ,"wb")
-        np.save(f,X[:idx1])
-        np.save(f,Y[:idx1])
-        np.save(f,Z[:idx1])
-        np.save(f,X[idx1:])
-        np.save(f,Y[idx1:])
-        np.save(f,Z[idx1:])
-        f.close()
-            
-        return X[:idx1], Y[:idx1], Z[:idx1], X[idx1:], Y[idx1:], Z[idx1:]
+        #np.save(f,X[:idx1])
+        #np.save(f,Y[:idx1])
+        #np.save(f,Z[:idx1])
+        #np.save(f,X[idx1:])
+        #np.save(f,Y[idx1:])
+        np.save(f,Z)
+        #f.close()
+        
+	# store dataset into 1 shared variable ("its gonna be huuge")
+	# dataset = theano.shared(np.asarray(Z, dtype=theano.config.floatX), name='dataset')
+	return Z, Z.shape[0]    
+        #return Z[:idx1], Z[idx1:]#X[:idx1], Y[:idx1], Z[:idx1], X[idx1:], Y[idx1:], Z[idx1:]
 
 
 #%%
@@ -160,61 +175,6 @@ def combine_tensor_images(real, pred, batch_size):
     out =  pred * mask + (1-mask) * real
     return out
 
-# method that takes the original image, downsizes it via pooling and layer repeat to 
-# "fit" with intermediate generator's output 
-# gen_output and masked_images are both Lasagne Layers (InputLayer, BatchNormLayer)
-def reset_deconv(masked_image, gen_output):
-
-    # first we check by max pooling ratio : 
-    b_s, channel_gen_out, height_gen_out, width_gen_out = ll.get_output_shape(gen_output)
-    b_s, channel_img, height_img, width_img = ll.get_output_shape(masked_image)
-
-    assert height_img % height_gen_out == 0
-
-    pool_size = height_img / height_gen_out 
-    channel_repeat = channel_gen_out / channel_img
-    repeat_red, repeat_green, repeat_blue = channel_repeat, channel_repeat, channel_repeat
-    repeat_blue += channel_gen_out % channel_repeat
-    # repeat_blue = 3
-
-    # step 1 : apply max pooling to fit height/width
-    pooled = ll.MaxPool2DLayer(masked_image, pool_size=pool_size)
-
-    # step 2 : repeat colors of pooled layer
-    # I just realized that Lasagne does not have a RepeatLayer module like Keras, 
-    # So I'll have to switch back to Theano to do this. Thankfully, Philip Paquette
-    # has already implemented something similar in his repo, so I'll take his. Give 
-    # credit where it's due. 
-
-    pooled_ = ll.get_output(pooled)
-    gen_output_ = ll.get_output(gen_output)
-
-    downsized_image_ = T.concatenate([
-        T.repeat(pooled_[:, 0, None, :, :], repeat_red, axis=1),
-        T.repeat(pooled_[:, 1, None, :, :], repeat_green, axis=1),
-        T.repeat(pooled_[:, 2, None, :, :], repeat_blue, axis=1)], axis=1)
-
-    # here, downsized_image_ and gen_output_ should be 2 tensors of equal shape
-    # we simply average them out here. EDIT : only average out overlapping parts. 
-    # for the center (mask) discard completely the downsized_image (as it is simply
-    # a black hole, and keep all gen_output_)
-    
-    if height_gen_out >= 4:
-        center = height_gen_out / 2
-        bottom = center - height_gen_out / 4
-        top = center + height_gen_out / 4
-        # print height_gen_out, center, bottom, top
-        middle_part = T.zeros(shape=ll.get_output_shape(gen_output), dtype=theano.config.floatX)
-        middle_part = T.set_subtensor(middle_part[:, :, bottom:top, bottom:top], gen_output_[:, :, bottom:top ,bottom:top])
-	downsized_image_ = T.set_subtensor(downsized_image_[:, :, bottom:top, bottom:top], 0. )
-	avgd_ = (downsized_image_ + middle_part) 
-        #avgd_ = (gen_output_ + downsized_image_  + middle_part) / 2
-    
-    else:
-        avgd_= (gen_output_ + downsized_image_) / 2
-    
-    # put it back into lasagne format (InputLayer) and return it. 
-    return ll.InputLayer(shape=ll.get_output_shape(gen_output), input_var=avgd_)
     
     
 #%%
@@ -262,27 +222,49 @@ def contour_delta_tensor(contour, pred, extra=4):
     
     final = contour_p - pred_p
     
-    return final 
+    return final
+
+def extract_contour_tensor(tensor, extra=3, batch_size=64):
+
+    global mask_border 
+    if mask_border is None : 
+    	mask_border = T.zeros(shape=(batch_size, 1, 64, 64), dtype=theano.config.floatX)
+        mask_border = T.set_subtensor(mask_border[:, :, 16:48, 16:48], 1.)
+        mask_border = T.set_subtensor(mask_border[:, :, 16+extra:48-extra, 16+extra:48-extra], 0.)
+
+    return tensor * mask_border
+
+def extract_middle_tensor(tensor, tensor_shape):
+    bs, chan, height, width = tensor_shape
+    bottom = height/2 - height/4
+    top    = height/2 - height/4 
+    center = T.zeros(shape=(bs, chan, height/2, width/2), dtype=theano.config.floatX)
+    center = T.set_subtensor(center[:, :, :, :], tensor[:, :, bottom:top, bottom:top])
+    return center
+
 
 #%%
-def saveImage(imageData, imageName, epoch):
+def saveImage(imageData, imageName, epoch, side=4, test=False):
 
     #creates a new empty image, RGB mode, and size 400 by 400.
-    new_im = Image.new('RGB', (64*4,64*4))
+    new_im = Image.new('RGB', (64*side,64*side))
     
     imageData = imageData.reshape((-1,64,64,3))
     
     #Iterate through a 4 by 4 grid with 100 spacing, to place my image
     index = 0
-    for i in xrange(0,5*64,64):
-        for j in xrange(0,5*64,64):
+    for i in xrange(0,(side)*64,64):
+        for j in xrange(0,(side)*64,64):
             #paste the image at location i,j:
             img = Image.fromarray(imageData[index])
             #img.show()
             new_im.paste(img, (i,j))
             index += 1
 
-    new_im.save(home + 'images/' + imageName+ '_epoch' + str(epoch) + '.png')
+    if test : 
+    	new_im.save(home + 'images/' + imageName+ '.png')
+    else : 
+        new_im.save(home + 'images/' + imageName+ '_epoch' + str(epoch) + '.png')
     
 def normalize(array):
     return (array - np.mean(array)) / np.std(array)
@@ -343,19 +325,44 @@ def update_model_params(model, param_path):
     with np.load(param_path) as f:
         param_values = [f['arr_%d' % i] for i in range(len(f.files))]
         lasagne.layers.set_all_param_values(model, param_values)  
-#%%
+
+def poisson_blending(original, predicted):
+    import cv2
+    src = predicted
+    dst = original
+    reshape = False
+
+    if src.shape[2] != 3 :
+        reshape = True
+        src = src.transpose(1,2,0)
+        dst = dst.transpose(1,2,0)
+
+    src_mask = np.zeros(src.shape, src.dtype)
+    src_mask[16:48, 16:48, :] = 255
+
+    merged = cv2.seamlessClone(src, dst, src_mask, center, cv2.NORMAL_CLONE)
+    if reshape : 
+        merged = merged.transpose(2,0,1)
+    return merged
+
+def batch_poisson_blending(original, predicted):
+    b_s = original.shape[0]
+    blended_all = np.zeros(original.shape)
+    for i in range(b_s):
+        blended_all[i] = poisson_blending(original[i], predicted[i])
+    return blended_all
 '''
 # method to combine predictions 
 x = T.tensor4()
 y = T.tensor4()
-z = combine_tensor_images(x,y, 64)
-combine_tensors = theano.function([x,y],z)
+z = extract_middle_tensor(x)
+get_middle = theano.function([x],z)
 
-a, b, c, d, e, f = load_dataset(sample=True)
+a, b = load_dataset(sample=True)
 
 #%%
-
-result = combine_tensors(a[:64], c[64:128])* 77 + 83
+result = get_middle(x[:100])
+#result = combine_tensors(a[:64], c[64:128])* 77 + 83
 result = result.transpose(0,2,3,1).astype('uint8')
 Image.fromarray(result[0]).show() 
 
@@ -365,5 +372,5 @@ z = get_contour(tx[100:200], pred[:100])
 
 tbp = z.transpose(0,2,3,1).astype('uint8')
 Image.fromarray(tbp[2]).show() 
-'''
 
+'''
