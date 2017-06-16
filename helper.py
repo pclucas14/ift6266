@@ -224,7 +224,7 @@ def contour_delta_tensor(contour, pred, extra=4):
     
     return final
 
-def extract_contour_tensor(tensor, extra=3, batch_size=64):
+def extract_contour_tensor(tensor, extra=4, batch_size=64):
 
     global mask_border 
     if mask_border is None : 
@@ -235,12 +235,20 @@ def extract_contour_tensor(tensor, extra=3, batch_size=64):
     return tensor * mask_border
 
 def extract_middle_tensor(tensor, tensor_shape):
+    global mask
+    if mask is None : 
+        mask = T.zeros(shape=(batch_size, 1, 64, 64), dtype=theano.config.floatX)
+        mask = T.set_subtensor(mask[:, :, 16:48, 16:48], 1.)
+    
+    return tensor * mask 
+    '''
     bs, chan, height, width = tensor_shape
     bottom = height/2 - height/4
-    top    = height/2 - height/4 
+    top    = height/2 + height/4 
     center = T.zeros(shape=(bs, chan, height/2, width/2), dtype=theano.config.floatX)
     center = T.set_subtensor(center[:, :, :, :], tensor[:, :, bottom:top, bottom:top])
     return center
+    '''
 
 
 #%%
@@ -262,9 +270,9 @@ def saveImage(imageData, imageName, epoch, side=4, test=False):
             index += 1
 
     if test : 
-    	new_im.save(home + 'images/' + imageName+ '.png')
+    	new_im.save(home + 'images3/' + imageName+ '.png')
     else : 
-        new_im.save(home + 'images/' + imageName+ '_epoch' + str(epoch) + '.png')
+        new_im.save(home + 'images3/' + imageName+ '_epoch' + str(epoch) + '.png')
     
 def normalize(array):
     return (array - np.mean(array)) / np.std(array)

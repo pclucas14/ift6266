@@ -262,13 +262,14 @@ class GaussianNoiseLayer(lasagne.layers.Layer):
 # mixing_coef is a theano shared int
 class ResetDeconvLayer(lasagne.layers.Layer):
 
-    def __init__(self, incoming, masked_image,mixing_coef, border=None, **kwargs):
+    def __init__(self, incoming, masked_image,mixing_coef, border=None, trainable=True, **kwargs):
 	super(ResetDeconvLayer, self).__init__(incoming, **kwargs)
 	self.incoming_dim = lasagne.layers.get_output_shape(incoming)
 	#self.input_shape = self.incoming_dim
 	self.masked_image = masked_image
 	self.name = 'reset deconv layer'
-	self.mixing_coef = mixing_coef#self.add_param(mixing_coef, (1,) , name="mix_coef", trainable=False, regularizable=False)
+	#mixing_coef = 1 * np.ones_like(self.incoming_dim)
+	self.mixing_coef = mixing_coef#self.add_param(lasagne.init.Constant(mixing_coef), self.incoming_dim , name="mix_coef", trainable=trainable, regularizable=False)
 	#self.input_layer = incoming.input_layer
 	self.border = border
 
